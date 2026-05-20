@@ -5,21 +5,10 @@ set -euo pipefail
 TEST_NAME=$(basename "$0" .sh)
 TEST_STATE_PATH="/var/lib/postgresql/test-state/${TEST_NAME}"
 
-# Cleanup on exit (even on error)
-cleanup() {
-  set +e
-  # save content for debug
-  mkdir -p "${TEST_STATE_PATH}"
-  cp -a /tmp/* "${TEST_STATE_PATH}/"
-  cp /var/log/postgresql/pg.log "${TEST_STATE_PATH}/pg.log" 2>/dev/null || true
-  # cleanup state
-  rm -rf /tmp/*
-}
-trap cleanup EXIT
-
 export BASEBACKUP_PATH="/tmp/basebackup"
 export WAL_PATH="/tmp/wal-archive"
 export LOG_FILE="/tmp/pgrwl.log"
+export LOG_FILE_SERVE="/tmp/pgrwl-restore.log"
 export LOG_LEVEL_DEFAULT=debug
 export LOG_FORMAT_DEFAULT=text
 export PG_RECEIVEWAL_WAL_PATH="/tmp/wal-archive-pg_receivewal"
@@ -29,6 +18,34 @@ export BACKGROUND_INSERTS_SCRIPT_LOG_FILE="/tmp/ts-inserts.log"
 export RECEIVER_PID=''
 export PGRECEIVEWAL_PID=''
 export SERVE_PID=''
+
+
+# Cleanup on exit (even on error)
+cleanup() {
+  set +e
+  # save content for debug
+  mkdir -p "${TEST_STATE_PATH}"
+  cp -a /tmp/* "${TEST_STATE_PATH}/"
+  cp /var/log/postgresql/pg.log "${TEST_STATE_PATH}/pg.log" 2>/dev/null || true
+
+  # dump logs
+  echo "::group::pgrwl-receive-logs"
+  cat "${LOG_FILE}"
+  echo "::endgroup::"
+
+  echo "::group::pgrwl-serve-logs"
+  cat "${LOG_FILE_SERVE}"
+  echo "::endgroup::"
+
+  echo "::group::postgres-logs"
+  cat "/var/log/postgresql/pg.log"
+  echo "::endgroup::"
+
+  # cleanup state
+  rm -rf /tmp/*
+}
+trap cleanup EXIT
+
 
 # Default environment
 
@@ -84,12 +101,16 @@ x_start_receiver() {
   local cfg=$1
   log_info "starting receiver with $cfg"
 
-  # Run the receiver in background.
-  #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
-  #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
-  /usr/local/bin/pgrwl daemon -c "${cfg}" -m receive \
-    > >(tee -a "$LOG_FILE") \
-    2> >(tee -a "$LOG_FILE" >&2) &
+  ## NOTE: whe you need to output both std/files
+  ##
+  ## # Run the receiver in background.
+  ## #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
+  ## #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
+  ## /usr/local/bin/pgrwl daemon -c "${cfg}" -m receive \
+  ##   > >(tee -a "$LOG_FILE") \
+  ##   2> >(tee -a "$LOG_FILE" >&2) &
+
+  /usr/local/bin/pgrwl daemon -c "${cfg}" -m receive >>"${LOG_FILE}" 2>&1 &
 
   RECEIVER_PID=$!
 }
@@ -100,6 +121,29 @@ x_stop_receiver() {
     kill -TERM "$RECEIVER_PID" 2>/dev/null || true
     wait "$RECEIVER_PID" 2>/dev/null || true
   fi
+}
+
+x_start_serving() {
+  local cfg=$1
+  log_info "starting wal-serving with $cfg"
+
+  ## NOTE: whe you need to output both std/files
+  ##
+  ## # Run the 'serve' mode in background.
+  ## #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
+  ## #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
+  ## /usr/local/bin/pgrwl daemon -c "${cfg}" -m serve \
+  ##   > >(tee -a "$LOG_FILE") \
+  ##   2> >(tee -a "$LOG_FILE" >&2) &
+
+  /usr/local/bin/pgrwl daemon -c "${cfg}" -m serve >>"${LOG_FILE_SERVE}" 2>&1 &
+
+  SERVE_PID=$!
+
+  # Wait for the HTTP server to be ready before returning.
+  # PostgreSQL's restore_command connects to this port immediately on startup;
+  # without this wait there is a race where the command fails and recovery aborts.
+  x_wait_http_ok "http://127.0.0.1:7070/healthz" 30
 }
 
 # start pg_receivewal in background and store its PID
@@ -134,25 +178,6 @@ x_generate_wal() {
   done
 }
 
-x_start_serving() {
-  local cfg=$1
-  log_info "starting wal-serving with $cfg"
-
-  # Run the 'serve' mode in background.
-  #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
-  #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
-  /usr/local/bin/pgrwl daemon -c "${cfg}" -m serve \
-    > >(tee -a "$LOG_FILE") \
-    2> >(tee -a "$LOG_FILE" >&2) &
-
-  SERVE_PID=$!
-
-  # Wait for the HTTP server to be ready before returning.
-  # PostgreSQL's restore_command connects to this port immediately on startup;
-  # without this wait there is a race where the command fails and recovery aborts.
-  x_wait_http_ok "http://127.0.0.1:7070/healthz" 30
-}
-
 x_search_errors_in_logs() {
   log_info "searching for errors in pgrwl logs"
   if [[ -f "${LOG_FILE}" ]]; then
@@ -163,6 +188,12 @@ x_search_errors_in_logs() {
   if [[ -f "/var/log/postgresql/pg.log" ]]; then
     grep -i "err" "/var/log/postgresql/pg.log" || log_info "no errors found in pg logs"
   fi
+}
+
+x_run_post_restore_check() {
+  psql -X -P pager=off -v ON_ERROR_STOP=1 \
+    -f /var/lib/postgresql/scripts/pg/post_restore_check.sql \
+    postgres
 }
 
 # toxiproxy utils

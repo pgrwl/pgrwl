@@ -117,7 +117,7 @@ EOF
   tail -10 "${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" || true
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  x_run_post_restore_check
 
   x_search_errors_in_logs
 }
