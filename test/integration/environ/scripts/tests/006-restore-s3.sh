@@ -49,21 +49,21 @@ EOF
 }
 
 x_backup_restore() {
-  echo_delim "cleanup state"
+  log_info "cleanup state"
   x_remake_dirs
   x_remake_config
 
   # rerun the cluster
-  echo_delim "init and run a cluster"
+  log_info "init and run a cluster"
   xpg_rebuild
   xpg_start
 
   # run wal-receivers
-  echo_delim "running wal-receivers"
+  log_info "running wal-receivers"
   x_start_receiver "/tmp/config.json"
 
   # make a backup before doing anything
-  echo_delim "creating backup"
+  log_info "creating backup"
   /usr/local/bin/pgrwl backup -c "/tmp/config.json"
 
   # run inserts in a background
@@ -71,7 +71,7 @@ x_backup_restore() {
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
 
   # fill with 1M rows
-  echo_delim "running pgbench"
+  log_info "running pgbench"
   pgbench -i -s 10 postgres
 
   # wait a little
@@ -84,12 +84,12 @@ x_backup_restore() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   # stop cluster, cleanup data
-  echo_delim "teardown"
+  log_info "teardown"
   x_stop_receiver
   xpg_teardown
 
   # restore from backup
-  echo_delim "restoring backup"
+  log_info "restoring backup"
   /usr/local/bin/pgrwl restore --dest="${PGDATA}" -c "/tmp/config.json"
   chmod 0750 "${PGDATA}"
   chown -R postgres:postgres "${PGDATA}"
@@ -105,11 +105,11 @@ restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
 EOF
 
   # run serve-mode
-  echo_delim "running wal fetcher"
+  log_info "running wal fetcher"
   x_start_serving "/tmp/config.json"
 
   # run restored cluster
-  echo_delim "running cluster"
+  log_info "running cluster"
   xpg_start
 
   # wait until is in recovery, check logs, etc...

@@ -106,7 +106,7 @@ x_http_json() {
 }
 
 x_wait_api_ready() {
-  echo_delim "wait for stream API"
+  log_info "wait for stream API"
 
   if ! x_wait_http_ok "${API_ADDR}/healthz" 60; then
     echo "pgrwl log:"
@@ -123,7 +123,7 @@ x_wait_basebackup_finished() {
   local running
   local last_error
 
-  echo_delim "wait for basebackup to finish"
+  log_info "wait for basebackup to finish"
 
   for ((i = 1; i <= timeout; i++)); do
     code="$(x_http_json GET "${BASEBACKUP_STATUS_URL}" "/tmp/basebackup-status.json")"
@@ -190,7 +190,7 @@ x_count_wal_files() {
 x_trigger_basebackup() {
   local code
 
-  echo_delim "trigger manual basebackup"
+  log_info "trigger manual basebackup"
 
   code="$(x_http_json POST "${BASEBACKUP_START_URL}" "/tmp/basebackup-start.json")"
   cat "/tmp/basebackup-start.json" || true
@@ -219,7 +219,7 @@ x_expect_duplicate_basebackup_conflict_if_running() {
     return 0
   fi
 
-  echo_delim "trigger duplicate manual basebackup"
+  log_info "trigger duplicate manual basebackup"
 
   code="$(x_http_json POST "${BASEBACKUP_START_URL}" "/tmp/basebackup-duplicate.json")"
   cat "/tmp/basebackup-duplicate.json" || true
@@ -231,16 +231,16 @@ x_expect_duplicate_basebackup_conflict_if_running() {
 }
 
 x_test_stream_api_basebackup() {
-  echo_delim "cleanup"
+  log_info "cleanup"
   x_remake_dirs
   x_remake_config
 
-  echo_delim "start cluster"
+  log_info "start cluster"
   xpg_rebuild
   xpg_start
   xpg_recreate_slots
 
-  echo_delim "prepare data before basebackup"
+  log_info "prepare data before basebackup"
   pgbench -i -s "${API_TEST_PGBENCH_SCALE}" postgres
 
   echo_delim "start receiver / stream daemon"

@@ -26,18 +26,18 @@ EOF
 }
 
 x_backup_restore() {
-  echo_delim "cleanup state"
+  log_info "cleanup state"
   x_remake_dirs
   x_remake_config
 
   # rerun the cluster
-  echo_delim "init and run a cluster"
+  log_info "init and run a cluster"
   xpg_rebuild
   xpg_start
   xpg_recreate_slots
 
   # run wal-receivers
-  echo_delim "running wal-receivers"
+  log_info "running wal-receivers"
   x_start_receiver "/tmp/config.json"
   x_start_pg_receivewal
 
@@ -91,7 +91,7 @@ INSERT INTO customers (customer_id, full_name, secret_hash) VALUES
 EOSQL
 
   # make a backup before doing anything
-  echo_delim "creating backup"
+  log_info "creating backup"
   /usr/local/bin/pgrwl backup -c "/tmp/config.json"
 
   # run inserts in a background
@@ -99,7 +99,7 @@ EOSQL
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
 
   # fill with 1M rows
-  echo_delim "running pgbench"
+  log_info "running pgbench"
   pgbench -i -s 10 postgres
 
   # wait a little

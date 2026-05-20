@@ -82,25 +82,25 @@ SQL
 x_backup_restore() {
   local target_lsn
 
-  echo_delim "cleanup state"
+  log_info "cleanup state"
   x_remake_dirs
   x_remake_config
 
-  echo_delim "init and run a cluster"
+  log_info "init and run a cluster"
   xpg_rebuild
   xpg_start
   xpg_init_fns
   xpg_recreate_slots
 
-  echo_delim "running wal-receivers"
+  log_info "running wal-receivers"
   x_start_receiver "/tmp/config.json"
   x_start_pg_receivewal
 
-  echo_delim "wait both receivers streaming"
+  log_info "wait both receivers streaming"
   xpg_wait_until_streaming "${PGRWL_APPNAME}"
   xpg_wait_until_streaming "${PGRECEIVEWAL_APPNAME}"
 
-  echo_delim "creating basebackup"
+  log_info "creating basebackup"
   pg_basebackup \
     --pgdata="${BASEBACKUP_PATH}/data" \
     --wal-method=none \
@@ -109,10 +109,10 @@ x_backup_restore() {
     --no-password \
     --verbose
 
-  echo_delim "generate WAL"
+  log_info "generate WAL"
   x_generate_wal 100
 
-  echo_delim "force WAL switch"
+  log_info "force WAL switch"
   xpg_sql "select pg_switch_wal();" >/dev/null
 
   echo_delim "capture target LSN"
