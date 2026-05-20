@@ -123,7 +123,7 @@ x_backup_restore() {
   # switch config files with different compression/encryption settings
   echo_delim "configs switching loop"
   declare -a config_files=(
-    "/tmp/config-gzip-aes.yaml" 
+    "/tmp/config-gzip-aes.yaml"
     "/tmp/config-aes.yaml"
     "/tmp/config-plain.yaml"
   )
@@ -135,7 +135,7 @@ x_backup_restore() {
 
     # generate some wals
     x_generate_wal 25
-    
+
     # wait compressor/encryptor/uploader
     sleep 10
   done
@@ -179,12 +179,13 @@ EOF
   # check diffs
   echo_delim "running diff on pg_dumpall dumps (before vs after)"
   pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
-  diff -u "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"  
+  diff -u "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  x_run_post_restore_check
 
   x_search_errors_in_logs
+  x_print_ok
 }
 
 x_backup_restore "${@}"

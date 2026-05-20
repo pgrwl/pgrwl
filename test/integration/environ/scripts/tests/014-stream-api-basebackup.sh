@@ -296,8 +296,7 @@ x_test_stream_api_basebackup() {
 
   echo_delim "check logs"
   x_search_errors_in_logs
-
-  echo_delim "OK"
+  x_print_ok
 }
 
 x_test_stream_api_basebackup "$@"

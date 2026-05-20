@@ -117,11 +117,10 @@ EOF
   x_sql "select count(*) from public.tslog where ts = '${MARKER}';" | grep -qx "1"
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  x_run_post_restore_check
 
   x_search_errors_in_logs
-
-  echo_delim "OK"
+  x_print_ok
 }
 
 x_backup_restore "$@"

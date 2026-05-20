@@ -165,6 +165,16 @@ x_search_errors_in_logs() {
   fi
 }
 
+x_print_ok() {
+  printf "\nOK\n"
+}
+
+x_run_post_restore_check() {
+  psql -X -P pager=off -v ON_ERROR_STOP=1 \
+    -f /var/lib/postgresql/scripts/pg/post_restore_check.sql \
+    postgres
+}
+
 # toxiproxy utils
 
 export TOXIPROXY_API="http://toxiproxy:8474"
