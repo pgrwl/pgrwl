@@ -165,9 +165,6 @@ EOF
   echo_delim "running wal fetcher"
   nohup /usr/local/bin/pgrwl daemon -c "/tmp/config-gzip-aes.yaml" -m serve >>"$LOG_FILE" 2>&1 &
 
-  # cleanup logs
-  >/var/log/postgresql/pg.log
-
   # run restored cluster
   echo_delim "running cluster"
   xpg_start

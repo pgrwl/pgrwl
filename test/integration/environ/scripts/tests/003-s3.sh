@@ -104,9 +104,6 @@ EOF
   echo_delim "running wal fetcher"
   x_start_serving "/tmp/config.json"
 
-  # cleanup logs
-  >/var/log/postgresql/pg.log
-
   # run restored cluster
   echo_delim "running cluster"
   xpg_start
