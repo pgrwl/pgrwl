@@ -269,3 +269,105 @@ x_toxiproxy_flap_minio() {
     done
   ) &
 }
+
+# ---------------------------------------------------------------------------
+# Standard backup/restore lifecycle with hook points.
+# Tests override only the hooks they need; everything else is a no-op.
+# ---------------------------------------------------------------------------
+
+x_hook_post_setup()            { :; }
+x_hook_after_cluster_start()   { :; }
+x_hook_start_extra_receivers() { :; }
+x_hook_after_start_receiver()  { :; }
+x_hook_before_create_backup()  { :; }
+x_hook_after_wal_generated()   { :; }
+x_hook_after_snapshot()        { :; }
+x_hook_stop_extra_receivers()  { :; }
+x_hook_rename_extra_partials() { :; }
+x_hook_after_diff()            { :; }
+
+x_hook_create_backup() {
+  echo_delim "creating basebackup"
+  pg_basebackup \
+    --pgdata="${BASEBACKUP_PATH}/data" \
+    --wal-method=none \
+    --checkpoint=fast \
+    --progress \
+    --no-password \
+    --verbose
+}
+
+x_hook_generate_wal() {
+  x_generate_wal 100
+}
+
+x_hook_restore_data() {
+  mv "${BASEBACKUP_PATH}/data" "${PGDATA}"
+  chmod 0750 "${PGDATA}"
+  chown -R postgres:postgres "${PGDATA}"
+  touch "${PGDATA}/recovery.signal"
+}
+
+x_run_backup_restore() {
+  echo_delim "cleanup state"
+  x_remake_dirs
+  x_remake_config
+  x_hook_post_setup
+
+  echo_delim "init and run a cluster"
+  xpg_rebuild
+  xpg_start
+  x_hook_after_cluster_start
+
+  echo_delim "running wal-receivers"
+  x_start_receiver "/tmp/config.json"
+  x_hook_after_start_receiver
+  x_hook_start_extra_receivers
+
+  x_hook_before_create_backup
+  x_hook_create_backup
+
+  x_hook_generate_wal
+  x_hook_after_wal_generated
+
+  pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
+  x_hook_after_snapshot
+
+  echo_delim "teardown"
+  x_stop_receiver
+  x_hook_stop_extra_receivers
+  xpg_teardown
+
+  echo_delim "restoring backup"
+  x_hook_restore_data
+
+  find "${WAL_PATH}" -type f -name "*.partial" -exec bash -c 'for f; do mv -v "$f" "${f%.partial}"; done' _ {} +
+  x_hook_rename_extra_partials
+
+  xpg_config
+  cat <<EOF >>"${PG_CFG}"
+restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+EOF
+
+  echo_delim "running wal fetcher"
+  x_start_serving "/tmp/config.json"
+
+  >/var/log/postgresql/pg.log
+
+  echo_delim "running cluster"
+  xpg_start
+
+  xpg_wait_is_in_recovery
+  cat /var/log/postgresql/pg.log
+
+  echo_delim "running diff on pg_dumpall dumps (before vs after)"
+  pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
+  diff "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
+
+  x_hook_after_diff
+
+  echo_delim "run post_restore_check.sql"
+  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+
+  x_search_errors_in_logs
+}
