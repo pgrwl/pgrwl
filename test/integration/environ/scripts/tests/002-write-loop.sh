@@ -26,23 +26,23 @@ EOF
 }
 
 x_backup_restore() {
-  echo_delim "cleanup state"
+  log_info "cleanup state"
   x_remake_dirs
   x_remake_config
 
   # rerun the cluster
-  echo_delim "init and run a cluster"
+  log_info "init and run a cluster"
   xpg_rebuild
   xpg_start
   xpg_recreate_slots
 
   # run wal-receivers
-  echo_delim "running wal-receivers"
+  log_info "running wal-receivers"
   x_start_receiver "/tmp/config.json"
   x_start_pg_receivewal
 
   # make a basebackup before doing anything
-  echo_delim "creating basebackup"
+  log_info "creating basebackup"
   pg_basebackup \
     --pgdata="${BASEBACKUP_PATH}/data" \
     --wal-method=none \
@@ -68,7 +68,7 @@ x_backup_restore() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   # stop cluster, cleanup data
-  echo_delim "teardown"
+  log_info "teardown"
   x_stop_receiver
   x_stop_pg_receivewal
   xpg_teardown
@@ -95,16 +95,12 @@ EOF
   echo_delim "running wal fetcher"
   x_start_serving "/tmp/config.json"
 
-  # cleanup logs
-  >/var/log/postgresql/pg.log
-
   # run restored cluster
   echo_delim "running cluster"
   xpg_start
 
   # wait until is in recovery, check logs, etc...
   xpg_wait_is_in_recovery
-  cat /var/log/postgresql/pg.log
 
   # check diffs
   echo_delim "running diff on pg_dumpall dumps (before vs after)"
@@ -117,7 +113,7 @@ EOF
   bash "/var/lib/postgresql/scripts/utils/dircmp.sh" "${WAL_PATH}" "${PG_RECEIVEWAL_WAL_PATH}"
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  x_run_post_restore_check
 
   x_search_errors_in_logs
 }

@@ -66,7 +66,7 @@ section() {
   echo "######################################################################"
   printf '### [%s] %s \n' "$(ts)" "$*"
   echo "######################################################################"
-  echo ""  
+  echo ""
 }
 
 need_cmd() {
@@ -656,7 +656,7 @@ print_summary() {
 }
 
 main() {
-  echo_delim "cleanup state"
+  log_info "cleanup state"
   x_kill_proc_rmrf_tmp
 
   init_sandbox

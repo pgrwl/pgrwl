@@ -53,21 +53,21 @@ x_sql() {
 }
 
 x_backup_restore() {
-  echo_delim "cleanup"
+  log_info "cleanup"
   x_remake_dirs
   x_remake_config
 
-  echo_delim "start cluster"
+  log_info "start cluster"
   xpg_rebuild
   xpg_start
 
-  echo_delim "start receiver"
+  log_info "start receiver"
   x_start_receiver "/tmp/config.json"
 
-  echo_delim "create base backup"
+  log_info "create base backup"
   pgrwl backup -c "/tmp/config.json"
 
-  echo_delim "start background inserts"
+  log_info "start background inserts"
   chmod +x "${BACKGROUND_INSERTS_SCRIPT_PATH}"
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
 
@@ -117,7 +117,7 @@ EOF
   x_sql "select count(*) from public.tslog where ts = '${MARKER}';" | grep -qx "1"
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  x_run_post_restore_check
 
   x_search_errors_in_logs
 

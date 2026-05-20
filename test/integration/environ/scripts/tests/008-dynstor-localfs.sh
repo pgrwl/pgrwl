@@ -97,21 +97,21 @@ EOF
 }
 
 x_backup_restore() {
-  echo_delim "cleanup state"
+  log_info "cleanup state"
   x_remake_dirs
   x_remake_config
 
   # rerun the cluster
-  echo_delim "init and run a cluster"
+  log_info "init and run a cluster"
   xpg_rebuild
   xpg_start
 
   # run wal-receivers (zstd compression, no encryption)
-  echo_delim "running wal-receiver with zstd compression, no encryption"
+  log_info "running wal-receiver with zstd compression, no encryption"
   x_start_receiver "/tmp/config-zstd.yaml"
 
   # make a basebackup before doing anything
-  echo_delim "creating basebackup"
+  log_info "creating basebackup"
   pg_basebackup \
     --pgdata="${BASEBACKUP_PATH}/data" \
     --wal-method=none \
@@ -121,21 +121,21 @@ x_backup_restore() {
     --verbose
 
   # switch config files with different compression/encryption settings
-  echo_delim "configs switching loop"
+  log_info "configs switching loop"
   declare -a config_files=(
-    "/tmp/config-gzip-aes.yaml" 
+    "/tmp/config-gzip-aes.yaml"
     "/tmp/config-aes.yaml"
     "/tmp/config-plain.yaml"
   )
   for config_file in "${config_files[@]}"; do
     # rerun receiver with a new config
-    echo_delim "running wal-receiver with config: ${config_file}"
+    log_info "running wal-receiver with config: ${config_file}"
     x_stop_receiver
     x_start_receiver "${config_file}"
 
     # generate some wals
     x_generate_wal 25
-    
+
     # wait compressor/encryptor/uploader
     sleep 10
   done
@@ -144,12 +144,12 @@ x_backup_restore() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   # stop cluster, cleanup data
-  echo_delim "teardown"
+  log_info "teardown"
   x_stop_receiver
   xpg_teardown
 
   # restore from backup
-  echo_delim "restoring backup"
+  log_info "restoring backup"
   mv "${BASEBACKUP_PATH}/data" "${PGDATA}"
   chmod 0750 "${PGDATA}"
   chown -R postgres:postgres "${PGDATA}"
@@ -162,11 +162,8 @@ restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
 EOF
 
   # run serve-mode
-  echo_delim "running wal fetcher"
+  log_info "running wal fetcher"
   nohup /usr/local/bin/pgrwl daemon -c "/tmp/config-gzip-aes.yaml" -m serve >>"$LOG_FILE" 2>&1 &
-
-  # cleanup logs
-  >/var/log/postgresql/pg.log
 
   # run restored cluster
   echo_delim "running cluster"
@@ -174,15 +171,14 @@ EOF
 
   # wait until is in recovery, check logs, etc...
   xpg_wait_is_in_recovery
-  cat /var/log/postgresql/pg.log
 
   # check diffs
   echo_delim "running diff on pg_dumpall dumps (before vs after)"
   pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
-  diff -u "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"  
+  diff -u "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  x_run_post_restore_check
 
   x_search_errors_in_logs
 }

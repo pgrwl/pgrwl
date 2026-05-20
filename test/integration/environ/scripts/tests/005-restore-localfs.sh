@@ -26,23 +26,23 @@ EOF
 }
 
 x_backup_restore() {
-  echo_delim "cleanup state"
+  log_info "cleanup state"
   x_remake_dirs
   x_remake_config
 
   # rerun the cluster
-  echo_delim "init and run a cluster"
+  log_info "init and run a cluster"
   xpg_rebuild
   xpg_start
   xpg_recreate_slots
 
   # run wal-receivers
-  echo_delim "running wal-receivers"
+  log_info "running wal-receivers"
   x_start_receiver "/tmp/config.json"
   x_start_pg_receivewal
 
   # make a backup before doing anything
-  echo_delim "creating backup"
+  log_info "creating backup"
   /usr/local/bin/pgrwl backup -c "/tmp/config.json"
 
   # run inserts in a background
@@ -50,7 +50,7 @@ x_backup_restore() {
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
 
   # fill with 1M rows
-  echo_delim "running pgbench"
+  log_info "running pgbench"
   pgbench -i -s 10 postgres
 
   # wait a little
@@ -63,13 +63,13 @@ x_backup_restore() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   # stop cluster, cleanup data
-  echo_delim "teardown"
+  log_info "teardown"
   x_stop_receiver
-  x_stop_pg_receivewal  
+  x_stop_pg_receivewal
   xpg_teardown
 
   # restore from backup
-  echo_delim "restoring backup"
+  log_info "restoring backup"
   #BACKUP_ID=$(find /tmp/wal-archive/backups -mindepth 1 -maxdepth 1 -type d -printf "%T@ %f\n" | sort -n | tail -1 | cut -d' ' -f2)
   /usr/local/bin/pgrwl restore --dest="${PGDATA}" -c "/tmp/config.json"
   chmod 0750 "${PGDATA}"
@@ -87,22 +87,18 @@ restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
 EOF
 
   # run serve-mode
-  echo_delim "running wal fetcher"
+  log_info "running wal fetcher"
   x_start_serving "/tmp/config.json"
 
-  # cleanup logs
-  >/var/log/postgresql/pg.log
-
   # run restored cluster
-  echo_delim "running cluster"
+  log_info "running cluster"
   xpg_start
 
   # wait until is in recovery, check logs, etc...
   xpg_wait_is_in_recovery
-  cat /var/log/postgresql/pg.log
 
   # check diffs
-  echo_delim "running diff on pg_dumpall dumps (before vs after)"
+  log_info "running diff on pg_dumpall dumps (before vs after)"
   pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
   diff "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
 
@@ -120,7 +116,7 @@ EOF
   bash "/var/lib/postgresql/scripts/utils/dircmp.sh" "${WAL_PATH}" "${PG_RECEIVEWAL_WAL_PATH}"
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  x_run_post_restore_check
 
   x_search_errors_in_logs
 }
