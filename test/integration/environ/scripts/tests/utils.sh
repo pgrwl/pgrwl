@@ -19,6 +19,23 @@ export RECEIVER_PID=''
 export PGRECEIVEWAL_PID=''
 export SERVE_PID=''
 
+dump_logs() {
+  logs=(
+    "${LOG_FILE}"
+    "${LOG_FILE_SERVE}"
+    "${PG_RECEIVEWAL_LOG_FILE}"
+    "${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}"
+    "/var/log/postgresql/pg.log"
+  )
+
+  for logfile in "${logs[@]}"; do
+    if [[ -f "${logfile}" ]]; then
+      echo "::group::${logfile}"
+      cat "${logfile}"
+      echo "::endgroup::"
+    fi
+  done
+}
 
 # Cleanup on exit (even on error)
 cleanup() {
@@ -28,18 +45,7 @@ cleanup() {
   cp -a /tmp/* "${TEST_STATE_PATH}/"
   cp /var/log/postgresql/pg.log "${TEST_STATE_PATH}/pg.log" 2>/dev/null || true
 
-  # dump logs
-  echo "::group::pgrwl-receive-logs"
-  cat "${LOG_FILE}"
-  echo "::endgroup::"
-
-  echo "::group::pgrwl-serve-logs"
-  cat "${LOG_FILE_SERVE}"
-  echo "::endgroup::"
-
-  echo "::group::postgres-logs"
-  cat "/var/log/postgresql/pg.log"
-  echo "::endgroup::"
+  dump_logs
 
   # cleanup state
   rm -rf /tmp/*

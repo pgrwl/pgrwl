@@ -154,7 +154,6 @@ EOF
   xpg_start
 
   xpg_wait_is_in_recovery
-  cat /var/log/postgresql/pg.log
 
   echo_delim "running diff on pg_dumpall dumps (before vs after)"
   pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0

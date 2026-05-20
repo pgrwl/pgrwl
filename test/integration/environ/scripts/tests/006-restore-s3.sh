@@ -114,7 +114,6 @@ EOF
 
   # wait until is in recovery, check logs, etc...
   xpg_wait_is_in_recovery
-  cat /var/log/postgresql/pg.log
 
   # check diffs
   echo_delim "running diff on pg_dumpall dumps (before vs after)"
