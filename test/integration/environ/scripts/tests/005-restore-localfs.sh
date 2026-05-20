@@ -25,104 +25,54 @@ x_remake_config() {
 EOF
 }
 
-x_backup_restore() {
-  echo_delim "cleanup state"
-  x_remake_dirs
-  x_remake_config
-
-  # rerun the cluster
-  echo_delim "init and run a cluster"
-  xpg_rebuild
-  xpg_start
+x_hook_after_cluster_start() {
   xpg_recreate_slots
+}
 
-  # run wal-receivers
-  echo_delim "running wal-receivers"
-  x_start_receiver "/tmp/config.json"
+x_hook_start_extra_receivers() {
   x_start_pg_receivewal
+}
 
-  # make a backup before doing anything
+x_hook_create_backup() {
   echo_delim "creating backup"
   /usr/local/bin/pgrwl backup -c "/tmp/config.json"
+}
 
-  # run inserts in a background
+x_hook_generate_wal() {
   chmod +x "${BACKGROUND_INSERTS_SCRIPT_PATH}"
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
-
-  # fill with 1M rows
   echo_delim "running pgbench"
   pgbench -i -s 10 postgres
-
-  # wait a little
   sleep 5
-
-  # stop inserts
   pkill -f inserts.sh
+}
 
-  # remember the state
-  pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
+x_hook_stop_extra_receivers() {
+  x_stop_pg_receivewal
+}
 
-  # stop cluster, cleanup data
-  echo_delim "teardown"
-  x_stop_receiver
-  x_stop_pg_receivewal  
-  xpg_teardown
-
-  # restore from backup
-  echo_delim "restoring backup"
-  #BACKUP_ID=$(find /tmp/wal-archive/backups -mindepth 1 -maxdepth 1 -type d -printf "%T@ %f\n" | sort -n | tail -1 | cut -d' ' -f2)
+x_hook_restore_data() {
   /usr/local/bin/pgrwl restore --dest="${PGDATA}" -c "/tmp/config.json"
   chmod 0750 "${PGDATA}"
   chown -R postgres:postgres "${PGDATA}"
   touch "${PGDATA}/recovery.signal"
+}
 
-  # prepare archive (all partial files contain valid wal-segments)
-  find "${WAL_PATH}" -type f -name "*.partial" -exec bash -c 'for f; do mv -v "$f" "${f%.partial}"; done' _ {} +
+x_hook_rename_extra_partials() {
   find "${PG_RECEIVEWAL_WAL_PATH}" -type f -name "*.partial" -exec bash -c 'for f; do mv -v "$f" "${f%.partial}"; done' _ {} +
+}
 
-  # fix configs
-  xpg_config
-  cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
-EOF
-
-  # run serve-mode
-  echo_delim "running wal fetcher"
-  x_start_serving "/tmp/config.json"
-
-  # cleanup logs
-  >/var/log/postgresql/pg.log
-
-  # run restored cluster
-  echo_delim "running cluster"
-  xpg_start
-
-  # wait until is in recovery, check logs, etc...
-  xpg_wait_is_in_recovery
-  cat /var/log/postgresql/pg.log
-
-  # check diffs
-  echo_delim "running diff on pg_dumpall dumps (before vs after)"
-  pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
-  diff "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
-
-  # read the latest rec
+x_hook_after_diff() {
   echo_delim "read latest applied records"
   echo "table content:"
   psql --pset pager=off -c "select * from public.tslog;"
   echo "insert log content:"
   tail -10 "${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}"
 
-  # compare with pg_receivewal
   echo_delim "compare wal-archive with pg_receivewal"
   find "${WAL_PATH}" -type f -name "*.json" -delete
   rm -rf "${WAL_PATH}/backups"
   bash "/var/lib/postgresql/scripts/utils/dircmp.sh" "${WAL_PATH}" "${PG_RECEIVEWAL_WAL_PATH}"
-
-  echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
-
-  x_search_errors_in_logs
 }
 
-x_backup_restore "${@}"
+x_run_backup_restore "${@}"

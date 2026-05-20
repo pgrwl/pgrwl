@@ -48,78 +48,38 @@ x_remake_config() {
 EOF
 }
 
-x_backup_restore_with_toxiproxy() {
-  echo_delim "cleanup state"
-  x_remake_dirs
+x_hook_post_setup() {
   x_toxiproxy_setup_minio
-  x_remake_config
+}
 
-  echo_delim "init and run a cluster"
-  xpg_rebuild
-  xpg_start
-
-  echo_delim "running wal receiver"
-  x_start_receiver "/tmp/config.json"
-
+x_hook_create_backup() {
   echo_delim "creating backup"
   /usr/local/bin/pgrwl backup -c "/tmp/config.json"
+}
 
+x_hook_generate_wal() {
   chmod +x "${BACKGROUND_INSERTS_SCRIPT_PATH}"
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
-
   echo_delim "generate load while minio is flapping through toxiproxy"
   x_toxiproxy_flap_minio 1 2 5 3
   pgbench -i -s 10 postgres
   x_generate_wal 50
   sleep 10
-
   pkill -f inserts.sh || true
+}
 
-  echo_delim "save expected state"
-  pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
-
-  echo_delim "teardown original cluster"
-  x_stop_receiver
-  xpg_teardown
-
-  echo_delim "restore backup while minio is cut through toxiproxy"
+x_hook_restore_data() {
   x_toxiproxy_cut_minio_after_delay 1 5
   /usr/local/bin/pgrwl restore --dest="${PGDATA}" -c "/tmp/config.json"
-
   chmod 0750 "${PGDATA}"
   chown -R postgres:postgres "${PGDATA}"
   touch "${PGDATA}/recovery.signal"
+}
 
-  find "${WAL_PATH}" -type f -name "*.partial" -exec bash -c 'for f; do mv -v "$f" "${f%.partial}"; done' _ {} +
-
-  xpg_config
-  cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
-EOF
-
-  echo_delim "start wal serving"
-  x_start_serving "/tmp/config.json"
-
-  >/var/log/postgresql/pg.log
-
-  echo_delim "start restored cluster"
-  xpg_start
-
-  xpg_wait_is_in_recovery
-  cat /var/log/postgresql/pg.log
-
-  echo_delim "diff pg_dumpall before vs after"
-  pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
-  diff "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
-
+x_hook_after_diff() {
   echo_delim "show latest applied records"
   psql --pset pager=off -c "select * from public.tslog;"
   tail -10 "${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" || true
-
-  echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
-
-  x_search_errors_in_logs
 }
 
-x_backup_restore_with_toxiproxy "$@"
+x_run_backup_restore "${@}"
