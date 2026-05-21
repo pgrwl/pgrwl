@@ -28,8 +28,9 @@ replication, automatic reconnects, partial WAL files, archive upload, retention,
 
 - [Overview](#overview)
 - [Quick Start](#quick-start)
-- [Configuration Reference](docs/pgrwl/configuration.md)
-- [Installation](docs/pgrwl/installation.md)
+- [Installation](docs/pgrwl/installation.md) - binary, Docker, Helm, Debian/Alpine packages
+- [Configuration Reference](docs/pgrwl/configuration.md) - full YAML/JSON schema and env-var mapping
+- [REST API](docs/pgrwl/rest-api.md)
 - [Disaster Recovery Use Cases](#disaster-recovery-use-cases)
 - [Architecture](#architecture)
     - [Design Notes](#design-notes)
@@ -117,11 +118,11 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
     pgrwl daemon -c config.yml -m receive
 ```
 
-**See also**
+**More examples**
 
-- [Kubernetes Examples (s3, ui, metrics)](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
-- [Docker-Compose examples (s3, ui)](docs/pgrwl/docker-compose-quick-start.md)
-- [restore_command reference](docs/pgrwl/restore-command.md)
+- [Kubernetes (S3, UI, metrics)](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
+- [Docker Compose (S3, UI)](docs/pgrwl/docker-compose-quick-start.md)
+- [restore_command setup](docs/pgrwl/restore-command.md)
 
 ---
 
@@ -156,6 +157,11 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
   **Serve mode** exposes local `*.partial` WAL files from the receiver's `ReadWriteOnce` PVC.
   This follows the main design rule: **always stream WAL to the local filesystem first**, so recovery
   can use the latest committed WAL records even if they were not archived yet.
+
+  ```ini
+  # postgresql.conf
+  restore_command = 'pgrwl restore-command --serve-addr=<host>:<port> %f %p'
+  ```
 
 This allows a crashed cluster to be restored to any point covered by the configured recovery window.
 
