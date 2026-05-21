@@ -129,44 +129,37 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
 
 ## Disaster Recovery Use Cases
 
-_The full process may look like this (a typical, rough, and simplified example):_
+- In production, `pgrwl` runs in **receive mode** as the main backup and archiving daemon.
 
-- A typical production setup runs `pgrwl` in **stream mode** as the main backup/archiving daemon.
-  In this mode, one process is responsible for **continuous WAL streaming**, **WAL archiving**, scheduled
-  **base backups**, optional manual basebackup triggers, metrics, and the HTTP API.
+- It continuously streams WAL from PostgreSQL, writes in-progress segments as `*.partial` files, 
+  and renames them to final WAL filenames when complete. 
+  Completed WAL files are then archived by the archive supervisor: optionally compressed, 
+  encrypted, uploaded to the configured backend, and removed locally after a successful upload.
 
-- In stream mode, `pgrwl` continuously **streams WAL files** from PostgreSQL, writes them locally as
-  `*.partial` files while they are still being received, and renames them to final WAL segment names once
-  the segment is complete.
+- `pgrwl` also creates scheduled full base backups, for example _once every three days_. 
+  Base backups can also be triggered manually through the HTTP API. 
+  Backup failures are logged and reported, but they do not stop WAL streaming, 
+  because WAL capture is the critical path.
 
-- The archive supervisor periodically scans completed WAL files, applies optional **compression** and
-  **encryption**, uploads them to the configured storage backend, such as **S3**, **SFTP**, or local storage,
-  and removes the local copy after a successful upload.
+- WAL files and base backups are stored in the same configured backend, such as **S3**, **SFTP**, 
+  or local storage, but under separate logical prefixes.
 
-- The basebackup supervisor performs full base backups on a configured schedule, for example **once every
-  three days**, using streaming basebackup. A basebackup can also be triggered manually through the HTTP API.
-  Basebackup failures are reported and logged, but they do not stop the WAL receiver, because WAL streaming
-  is the critical part of the system.
+- Retention is handled by a single **recovery-window policy**. `pgrwl` selects an **anchor backup**: 
+  the newest successful basebackup that started before the recovery window begins. 
+  It keeps that backup, all newer successful backups, and all WAL files 
+  required to restore forward from the anchor backup.
 
-- WAL files and basebackups are stored in the same configured storage backend, but under different logical
-  paths or prefixes. For example, WAL files may be stored under a WAL archive path, while basebackup files
-  and manifests are stored under a backups path.
+- For example, with a **72-hour recovery window**, `pgrwl` keeps enough 
+  basebackup and WAL history to recover to any point in the last three days.
 
-- Retention is handled by a single **recovery-window retention manager**. Instead of deleting WALs and
-  backups independently, it chooses an **anchor backup**: the newest successful basebackup that started
-  before the beginning of the configured recovery window. It then keeps that backup, all newer successful
-  backups, and all WAL files required to restore forward from the anchor backup.
+- During recovery, `pgrwl` runs in **serve mode**. PostgreSQL calls `pgrwl restore-command` 
+  from `restore_command`; the helper fetches requested WAL files from the restore daemon 
+  and writes them to the path expected by PostgreSQL. 
+  **Serve mode** exposes local `*.partial` WAL files from the receiver's `ReadWriteOnce` PVC.
+  This follows the main design rule: **always stream WAL to the local filesystem first**, so recovery
+  can use the latest committed WAL records even if they were not archived yet.
 
-- For example, with a recovery window of **72 hours**, `pgrwl` keeps enough backup and WAL history to recover
-  to any point within the last three days. WAL files older than the anchor backup’s start WAL can be removed,
-  while WAL files from the anchor backup onward are kept.
-
-- During recovery, `pgrwl` can run in **restore mode** as a restore daemon. PostgreSQL’s `restore_command`
-  invokes the lightweight `pgrwl restore-command` helper, which asks the restore daemon for the requested WAL
-  file and writes it to the path expected by PostgreSQL.
-
-- With this setup, you're able to restore your cluster after a crash to **any point covered by the configured
-  recovery window**, using the retained basebackup and the WAL files kept from that backup onward.
+This allows a crashed cluster to be restored to any point covered by the configured recovery window.
 
 ---
 
