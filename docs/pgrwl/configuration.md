@@ -1,0 +1,122 @@
+# Configuration Reference
+
+The configuration file is in JSON or YML format (\*.json is preferred).
+It supports environment variable placeholders like `${PGRWL_SECRET_ACCESS_KEY}`.
+
+You may either use `pgrwl daemon -c config.yml -m receive` or provide the corresponding environment variables and run
+`pgrwl daemon`.
+
+## YAML/JSON config file structure
+
+```
+---
+main:                                    # Required for both modes: receive/serve
+  listen_port: 7070                      # HTTP server port (used for management)
+  directory: "/var/lib/pgwal"            # Base directory for storing WAL files
+
+receiver:                                # Required for 'receive' mode
+  slot: replication_slot                 # Replication slot to use
+  no_loop: false                         # If true, do not loop on connection loss
+  uploader:                              # Required for non-local storage type
+    sync_interval: 10s                   # Interval for the upload worker to check for new files
+    max_concurrency: 4                   # Maximum number of files to upload concurrently
+
+backup:                                  # Required for stream mode
+  cron: "0 0 */3 * *"                    # Basebackup cron schedule, POSIX format: minute hour day-of-month month day-of-week
+
+retention:                               # Optional
+  enable: true                           # Enable recovery-window retention
+  type: recovery_window                  # Only supported retention policy
+  value: 72h                             # Recovery window; keep enough backups/WALs to recover to any point in the last 72h
+  keep_last: 1                           # Minimum number of successful backups to keep, even if outside/inside the recovery window
+
+log:                                     # Optional
+  level: info                            # One of: (trace / debug / info / warn / error)
+  format: text                           # One of: (text / pretty / json)
+  add_source: true                       # Include file:line in log messages (for local development)
+
+metrics:                                 # Optional
+  enable: true                           # Optional (used in receive mode: http://host:port/metrics)
+
+devconfig:                               # Optional (various dev options)
+  pprof:                                 # pprof settings
+    enable: true                         # Enable pprof handlers
+
+storage:                                 # Optional
+  name: s3                               # One of: (s3 / sftp)
+  compression:                           # Optional
+    algo: gzip                           # One of: (gzip / zstd)
+  encryption:                            # Optional
+    algo: aes-256-gcm                    # One of: (aes-256-gcm)
+    pass: "${PGRWL_ENCRYPT_PASSWD}"      # Encryption password (from env)
+  sftp:                                  # Required section for 'sftp' storage
+    host: sftp.example.com               # SFTP server hostname
+    port: 22                             # SFTP server port
+    user: backupuser                     # SFTP username
+    pass: "${PGRWL_VM_PASSWORD}"         # SFTP password (from env)
+    pkey_path: "/home/user/.ssh/id_rsa"  # Path to SSH private key (optional)
+    pkey_pass: "${PGRWL_SSH_PKEY_PASS}"  # Required if the private key is password-protected
+    base_dir: "/mnt/wal-archive"         # Base directory with sufficient user permissions
+  s3:                                    # Required section for 's3' storage
+    url: https://s3.example.com          # S3-compatible endpoint URL
+    access_key_id: AKIAEXAMPLE           # AWS access key ID
+    secret_access_key: "${PGRWL_AWS_SK}" # AWS secret access key (from env)
+    bucket: postgres-backups             # Target S3 bucket name
+    region: us-east-1                    # S3 region
+    use_path_style: true                 # Use path-style URLs for S3
+    disable_ssl: false                   # Disable SSL
+```
+
+## Corresponding env-vars
+
+```
+PGRWL_MAIN_LISTEN_PORT                   # HTTP server port (used for management)
+PGRWL_MAIN_DIRECTORY                     # Base directory for storing WAL files
+PGRWL_RECEIVER_SLOT                      # Replication slot to use
+PGRWL_RECEIVER_NO_LOOP                   # If true, do not loop on connection loss
+PGRWL_RECEIVER_UPLOADER_SYNC_INTERVAL    # Interval for the upload worker to check for new files
+PGRWL_RECEIVER_UPLOADER_MAX_CONCURRENCY  # Maximum number of files to upload concurrently
+PGRWL_BACKUP_CRON                        # Basebackup cron schedule, POSIX format: minute hour day-of-month month day-of-week
+PGRWL_RETENTION_ENABLE                   # Enable recovery-window retention
+PGRWL_RETENTION_TYPE                     # Only supported retention policy
+PGRWL_RETENTION_VALUE                    # Recovery window; keep enough backups/WALs to recover to any point in the last 72h
+PGRWL_RETENTION_KEEP_LAST                # Minimum number of successful backups to keep, even if outside/inside the recovery window
+PGRWL_LOG_LEVEL                          # One of: (trace / debug / info / warn / error)
+PGRWL_LOG_FORMAT                         # One of: (text / pretty / json)
+PGRWL_LOG_ADD_SOURCE                     # Include file:line in log messages (for local development)
+PGRWL_METRICS_ENABLE                     # Optional (used in receive mode: http://host:port/metrics)
+PGRWL_DEVCONFIG_PPROF_ENABLE             # Enable pprof handlers
+PGRWL_STORAGE_NAME                       # One of: (s3 / sftp)
+PGRWL_STORAGE_COMPRESSION_ALGO           # One of: (gzip / zstd)
+PGRWL_STORAGE_ENCRYPTION_ALGO            # One of: (aes-256-gcm)
+PGRWL_STORAGE_ENCRYPTION_PASS            # Encryption password (from env)
+PGRWL_STORAGE_SFTP_HOST                  # SFTP server hostname
+PGRWL_STORAGE_SFTP_PORT                  # SFTP server port
+PGRWL_STORAGE_SFTP_USER                  # SFTP username
+PGRWL_STORAGE_SFTP_PASS                  # SFTP password (from env)
+PGRWL_STORAGE_SFTP_PKEY_PATH             # Path to SSH private key (optional)
+PGRWL_STORAGE_SFTP_PKEY_PASS             # Required if the private key is password-protected
+PGRWL_STORAGE_SFTP_BASE_DIR              # Base directory with sufficient user permissions
+PGRWL_STORAGE_S3_URL                     # S3-compatible endpoint URL
+PGRWL_STORAGE_S3_ACCESS_KEY_ID           # AWS access key ID
+PGRWL_STORAGE_S3_SECRET_ACCESS_KEY       # AWS secret access key (from env)
+PGRWL_STORAGE_S3_BUCKET                  # Target S3 bucket name
+PGRWL_STORAGE_S3_REGION                  # S3 region
+PGRWL_STORAGE_S3_USE_PATH_STYLE          # Use path-style URLs for S3
+PGRWL_STORAGE_S3_DISABLE_SSL             # Disable SSL
+```
+
+## Dashboard configuration
+
+`PGRWL_UI_CONFIG_PATH` env-var is used to discover config (default: `./pgrwl-ui.yaml`)
+
+```
+listen_addr: ":8080"
+
+receivers:
+  - label: localhost
+    addr: http://127.0.0.1:7070
+
+  - label: prod-db-01
+    addr: http://10.0.0.11:9090
+```
