@@ -48,7 +48,7 @@ and retention - each one more thing to configure, monitor, and debug.
 
 `pgrwl` replaces that entire stack with a single process: WAL streaming, scheduled base backups,
 compression, encryption, S3/SFTP upload, retention management, and a restore helper - all driven
-by one config file. No external schedulers, no backup tool chains, no extra services to operate.
+by one config file.
 
 It implements the streaming replication protocol directly (not `archive_command`), which means
 it supports replication slots, `*.partial` WAL files, and synchronous replication acknowledgment -
