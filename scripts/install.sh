@@ -1,6 +1,24 @@
 #!/bin/sh
 set -eu
 
+#
+# pgrwl install script
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/pgrwl/pgrwl/master/scripts/install.sh | sh
+#   
+#   curl -fsSL https://raw.githubusercontent.com/pgrwl/pgrwl/master/scripts/install.sh \
+#    | PGRWL_VERSION=v1.0.34 PGRWL_INSTALL_DIR=/opt/pgrwl/bin sh
+#
+#   wget -qO- https://raw.githubusercontent.com/pgrwl/pgrwl/master/scripts/install.sh | sh
+#
+# Environment:
+#   PGRWL_VERSION       Release tag to install (default: latest)
+#   PGRWL_INSTALL_DIR   Install directory (default: /usr/local/bin, ignored on Windows)
+#
+# Requires: curl or wget, tar
+#
+
 REPO="pgrwl/pgrwl"
 BIN="pgrwl"
 
