@@ -1,0 +1,156 @@
+@startuml flow
+
+' GitHub dark palette overrides
+skinparam backgroundColor        #0d1117
+skinparam defaultFontName        "Verdana"
+skinparam defaultFontSize        18
+skinparam shadowing              false
+skinparam roundcorner            6
+skinparam BoxPadding             20
+skinparam ParticipantPadding     20
+
+' Participants
+skinparam participant {
+  BackgroundColor                #161b22
+  BorderColor                    #768390
+  FontColor                      #e6edf3
+  ParticipantBorderThickness     2
+}
+
+' Database shapes
+skinparam database {
+  BackgroundColor                #161b22
+  BorderColor                    #79c0ff
+  FontColor                      #a5d6ff
+}
+
+' Boxes
+skinparam sequence {
+  BoxBackgroundColor             #0d1117
+  BoxBorderColor                 #58a6ff
+  BoxFontColor                   #a5d6ff
+
+  LifeLineBorderColor            #6e7681
+  LifeLineBorderThickness        2
+  LifeLineBackgroundColor        #161b22
+
+  GroupBorderColor               #768390
+  GroupFontColor                 #c9d1d9
+  GroupHeaderFontColor           #e6edf3
+  GroupBackgroundColor           #161b22
+  GroupBodyBackgroundColor       #0d1117
+  GroupHeaderBackgroundColor     #161b22
+
+  DividerBackgroundColor         #161b22
+  DividerBorderColor             #6e7681
+  DividerBorderThickness         1
+  DividerFontColor               #c9d1d9
+}
+
+' Arrows
+skinparam arrow {
+  Color                          #79c0ff
+  FontColor                      #c9d1d9
+  Thickness                      2
+}
+
+' Notes
+skinparam note {
+  BackgroundColor                #161b22
+  BorderColor                    #768390
+  FontColor                      #c9d1d9
+  BorderThickness                2
+}
+
+' Title / header / footer
+skinparam title {
+  FontColor                      #e6edf3
+  BorderColor                    #6e7681
+  FontSize                       30
+  BackgroundColor                #0d1117
+  BorderRoundCorner              6
+  BorderThickness                2
+}
+skinparam HeaderFontColor        #8b949e
+skinparam HeaderFontSize         15
+skinparam FooterFontColor        #8b949e
+skinparam FooterFontSize         15
+
+' Diagram
+
+title "PGRWL — Stream Mode (WAL, Basebackup, Retention)"
+footer Cloud-Native PostgreSQL WAL Receiver - pgrwl
+header stream mode
+scale max 980 height
+
+box "PostgreSQL Server" #0a1628
+  database "PostgreSQL" as PG
+end box
+
+box "PGRWL Stream Mode" #0d1117
+  participant "WAL Receiver"          as Receiver
+  participant "Archive Supervisor"    as ArchiveSupervisor
+  participant "WAL Uploader"          as Uploader
+  participant "Basebackup Supervisor" as BackupSupervisor
+  participant "Retention Manager"     as Retention
+  participant "HTTP API"              as API
+end box
+
+box "Storage" #0a1628
+  database "Object Storage / SFTP / Local\n(WAL archive + basebackups)" as Storage
+end box
+
+== WAL Reception ==
+Receiver -> PG              : Stream WAL records
+Receiver -> Receiver        : Write to *.partial WAL file
+Receiver -> Receiver        : When segment completes\nrename to final WAL file
+
+== Archive Control Loop ==
+ArchiveSupervisor -> ArchiveSupervisor : Run(ctx)
+note right of ArchiveSupervisor
+  Periodically triggers upload work.
+  Upload errors are logged and retried later.
+  Upload logic must not interfere with WAL receiver.
+end note
+ArchiveSupervisor --> Uploader : Every SyncInterval\ntrigger performUploads()
+
+== WAL Upload ==
+note right of Uploader
+  Scans completed local WAL files.
+  Skips incomplete/temporary files.
+  Uploads WALs into WAL archive paths in storage.
+end note
+Uploader -> Receiver : Scan local WAL directory
+Uploader -> Storage  : Compress -> Encrypt -> Upload WAL file
+Uploader -> Receiver : On success -> delete local uploaded WAL file
+
+== Basebackup Scheduling / Manual Trigger ==
+BackupSupervisor -> BackupSupervisor : Run(ctx)
+note right of BackupSupervisor
+  Responsible for scheduled basebackups.
+  Manual backups may also be triggered via HTTP API.
+  Basebackup failures must not stop WAL receiver.
+  Stores basebackups under backup paths in the same storage.
+end note
+BackupSupervisor -> PG      : On cron schedule\ncreate basebackup
+BackupSupervisor -> Storage : Store/upload backup files + manifest
+API --> BackupSupervisor    : POST /api/v1/basebackup\n(optional manual trigger)
+
+== Unified Recovery-Window Retention ==
+Retention -> Retention : Run(ctx)
+note right of Retention
+  recovery_window policy: anchor on newest
+  backup within window, then prune older
+  backups and WALs before anchor start.
+end note
+Retention -> Storage   : List backups + manifests
+Retention -> Retention : Choose anchor backup
+Retention -> Storage   : Delete backups older than anchor
+Retention -> Storage   : Delete WALs before anchor start WAL
+
+== API / Status ==
+API -> BackupSupervisor : GET /api/v1/basebackup/status
+API -> Receiver         : GET /healthz
+API -> Receiver         : GET /api/v1/status
+
+@enduml

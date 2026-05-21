@@ -61,7 +61,7 @@ enabling **RPO=0** in high-durability setups.
 
 **Architecture**
 
-![Receive Mode](docs/assets/svg/stream-mode.svg)
+![Receive Mode](docs/assets/svg/stream-mode-v2.svg)
 
 ---
 
