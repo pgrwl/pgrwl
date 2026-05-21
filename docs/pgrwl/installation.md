@@ -50,6 +50,12 @@ chmod +x /usr/local/bin/pgrwl
 )
 ```
 
+Or via helper:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pgrwl/pgrwl/master/scripts/install.sh | sh
+```
+
 ## Package-Based installation
 
 ### Debian
