@@ -117,17 +117,13 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
     pgrwl daemon -c config.yml -m receive
 ```
 
-**Kubernetes examples**
+**See also**
 
-See [examples](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
+[Kubernetes Examples (s3, ui, metrics)](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
 
-**Docker-Compose examples (s3, ui)**
+[Docker-Compose examples (s3, ui)](docs/pgrwl/docker-compose-quick-start.md)
 
-See [examples](docs/pgrwl/docker-compose-quick-start.md)
-
-**Restore command**
-
-See [restore_command](docs/pgrwl/restore-command.md)
+[restore_command reference](docs/pgrwl/restore-command.md)
 
 ---
 
