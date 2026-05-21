@@ -8,6 +8,8 @@ skinparam shadowing              false
 skinparam roundcorner            6
 skinparam BoxPadding             20
 skinparam ParticipantPadding     20
+skinparam diagramBorderColor     #30363d
+skinparam diagramBorderThickness 2
 
 ' Participants
 skinparam participant {
