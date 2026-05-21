@@ -25,6 +25,9 @@ func main() {
 }
 
 func newCliApp() *cliv3.Command {
+	cliv3.VersionPrinter = func(cmd *cliv3.Command) {
+		_, _ = fmt.Fprintf(cmd.Root().Writer, "%s", cmd.Root().Version)
+	}
 	return &cliv3.Command{
 		Name:    "pgrwl",
 		Usage:   "Cloud-native continuous backup for PostgreSQL",
