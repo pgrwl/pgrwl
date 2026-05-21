@@ -55,6 +55,10 @@ You can read more about Conventional Commits [here](https://www.conventionalcomm
 
 Thanks for your interest in contributing! Below are the steps to build, lint, test, and verify the project locally.
 
+Check also the [Developer Notes](docs/pgrwl/developer-notes.md) for additional information and guidelines.
+
+Debug with your favorite editor and a local PostgreSQL container ([local-dev-infra](test/integration/environ/)).
+
 ```bash
 # Compile the project
 make build

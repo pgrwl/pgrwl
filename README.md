@@ -26,7 +26,7 @@ replication, automatic reconnects, partial WAL files, archive upload, retention,
 
 ## Table of Contents
 
-- [About](#about)
+- [Overview](#overview)
 - [Quick Start](#quick-start)
 - [Configuration Reference](docs/pgrwl/configuration.md)
 - [Installation](docs/pgrwl/installation.md)
@@ -35,15 +35,15 @@ replication, automatic reconnects, partial WAL files, archive upload, retention,
     - [Design Notes](#design-notes)
     - [Durability \& `fsync`](#durability--fsync)
     - [Why Not `archive_command`?](#why-not-archive_command)
-- [Contributing](#contributing)
+- [Contributing](CONTRIBUTING.md)
 - [Links](docs/pgrwl/links.md)
 - [License](#license)
 
 ---
 
-## About
+## Overview
 
-Reliable PostgreSQL backups come with moving parts: WAL handling, scheduled jobs, compression, remote storage, 
+Reliable PostgreSQL backups come with moving parts: WAL handling, scheduled jobs, compression, remote storage,
 and retention - each one more thing to configure, monitor, and debug.
 
 `pgrwl` replaces that entire stack with a single process: WAL streaming, scheduled base backups,
@@ -64,7 +64,7 @@ enabling **RPO=0** in high-durability setups.
 
 ---
 
-## Quick Start 
+## Quick Start
 
 ```sh
 # Install
@@ -119,11 +119,9 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
 
 **See also**
 
-[Kubernetes Examples (s3, ui, metrics)](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
-
-[Docker-Compose examples (s3, ui)](docs/pgrwl/docker-compose-quick-start.md)
-
-[restore_command reference](docs/pgrwl/restore-command.md)
+- [Kubernetes Examples (s3, ui, metrics)](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
+- [Docker-Compose examples (s3, ui)](docs/pgrwl/docker-compose-quick-start.md)
+- [restore_command reference](docs/pgrwl/restore-command.md)
 
 ---
 
@@ -131,30 +129,30 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
 
 - In production, `pgrwl` runs in **receive mode** as the main backup and archiving daemon.
 
-- It continuously streams WAL from PostgreSQL, writes in-progress segments as `*.partial` files, 
-  and renames them to final WAL filenames when complete. 
-  Completed WAL files are then archived by the archive supervisor: optionally compressed, 
+- It continuously streams WAL from PostgreSQL, writes in-progress segments as `*.partial` files,
+  and renames them to final WAL filenames when complete.
+  Completed WAL files are then archived by the archive supervisor: optionally compressed,
   encrypted, uploaded to the configured backend, and removed locally after a successful upload.
 
-- `pgrwl` also creates scheduled full base backups, for example _once every three days_. 
-  Base backups can also be triggered manually through the HTTP API. 
-  Backup failures are logged and reported, but they do not stop WAL streaming, 
+- `pgrwl` also creates scheduled full base backups, for example _once every three days_.
+  Base backups can also be triggered manually through the HTTP API.
+  Backup failures are logged and reported, but they do not stop WAL streaming,
   because WAL capture is the critical path.
 
-- WAL files and base backups are stored in the same configured backend, such as **S3**, **SFTP**, 
+- WAL files and base backups are stored in the same configured backend, such as **S3**, **SFTP**,
   or local storage, but under separate logical prefixes.
 
-- Retention is handled by a single **recovery-window policy**. `pgrwl` selects an **anchor backup**: 
-  the newest successful basebackup that started before the recovery window begins. 
-  It keeps that backup, all newer successful backups, and all WAL files 
+- Retention is handled by a single **recovery-window policy**. `pgrwl` selects an **anchor backup**:
+  the newest successful basebackup that started before the recovery window begins.
+  It keeps that backup, all newer successful backups, and all WAL files
   required to restore forward from the anchor backup.
 
-- For example, with a **72-hour recovery window**, `pgrwl` keeps enough 
+- For example, with a **72-hour recovery window**, `pgrwl` keeps enough
   basebackup and WAL history to recover to any point in the last three days.
 
-- During recovery, `pgrwl` runs in **serve mode**. PostgreSQL calls `pgrwl restore-command` 
-  from `restore_command`; the helper fetches requested WAL files from the restore daemon 
-  and writes them to the path expected by PostgreSQL. 
+- During recovery, `pgrwl` runs in **serve mode**. PostgreSQL calls `pgrwl restore-command`
+  from `restore_command`; the helper fetches requested WAL files from the restore daemon
+  and writes them to the path expected by PostgreSQL.
   **Serve mode** exposes local `*.partial` WAL files from the receiver's `ReadWriteOnce` PVC.
   This follows the main design rule: **always stream WAL to the local filesystem first**, so recovery
   can use the latest committed WAL records even if they were not archived yet.
@@ -212,15 +210,6 @@ _It is therefore unwise to set a very short `archive_timeout` - it will bloat yo
 In contrast, streaming WAL archiving-when used with replication slots and the `synchronous_standby_names`
 parameter-ensures that the system can be restored to the latest committed transaction.
 This approach provides true zero data loss (**RPO=0**), making it ideal for high-durability requirements.
-
-## Contributing
-
-Contributions are welcomed and greatly appreciated. See [CONTRIBUTING.md](./CONTRIBUTING.md)
-for details on submitting patches and the contribution workflow.
-
-Check also the [Developer Notes](docs/pgrwl/developer-notes.md) for additional information and guidelines.
-
-Debug with your favorite editor and a local PostgreSQL container ([local-dev-infra](test/integration/environ/)).
 
 ---
 
