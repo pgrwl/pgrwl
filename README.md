@@ -122,7 +122,6 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
 
 - [Kubernetes (S3, UI, metrics)](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
 - [Docker Compose (S3, UI)](docs/pgrwl/docker-compose-quick-start.md)
-- [restore_command setup](docs/pgrwl/restore-command.md)
 
 ---
 
