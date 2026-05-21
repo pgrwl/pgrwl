@@ -4,4 +4,5 @@ examples/** linguist-vendored
 hack/** linguist-vendored
 docs/** linguist-vendored
 charts/** linguist-vendored
+scripts/** linguist-vendored
 ui/static/** linguist-vendored
