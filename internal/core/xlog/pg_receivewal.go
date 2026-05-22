@@ -204,9 +204,13 @@ func (pgrw *pgReceiveWal) streamLog(ctx context.Context) error {
 	err = stream.ReceiveXlogStream(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			pgrw.log().Warn("log streaming terminated: context canceled")
+			pgrw.log().Warn("log streaming terminated",
+				slog.String("cause", "context canceled"),
+			)
 		} else {
-			pgrw.log().Error("log streaming terminated", slog.Any("err", err))
+			pgrw.log().Error("log streaming terminated",
+				slog.Any("err", err),
+			)
 		}
 	}
 
@@ -317,7 +321,8 @@ func (pgrw *pgReceiveWal) findStreamingStart() (pglogrepl.LSN, uint32, error) {
 		startLSN = XLogSegNoToRecPtr(best.segNo+1, pgrw.walSegSz)
 	}
 
-	pgrw.log().Debug("found streaming start (based on WAL dir)",
+	pgrw.log().Debug("found streaming start",
+		slog.String("note", "based on WAL dir"),
 		slog.String("lsn", startLSN.String()),
 		slog.Uint64("tli", uint64(best.tli)),
 		slog.String("wal", best.basename),

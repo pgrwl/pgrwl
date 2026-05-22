@@ -292,7 +292,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		cancel()
 	}
 
-	loggr.Info("shutting down, waiting for goroutines...")
+	loggr.Info("shutting down", slog.String("note", "waiting for goroutines..."))
 
 	done := make(chan struct{})
 	go func() {

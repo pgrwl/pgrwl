@@ -85,7 +85,7 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 
 		// File exists
 		if conv.ToUint64(stat.Size()) == stream.walSegSz {
-			l.Debug("file exists and correctly sized, open and fsync")
+			l.Debug("file exists and correctly sized", slog.String("note", "open and fsync"))
 
 			// File already correctly sized, open it
 			fd, err := stream.openFileAndFsync(fullPath)
@@ -240,14 +240,14 @@ func (stream *StreamCtl) closeNoRename() error {
 		slog.String("path", filepath.ToSlash(pathname)),
 	)
 
-	l.Warn("close without renaming, segment is not complete")
+	l.Warn("close without renaming", slog.String("note", "segment is not complete"))
 	err := stream.walfile.fd.Close()
 	if err != nil {
 		return err
 	}
 	stream.walfile = nil
 
-	l.Debug("fsync filename and parent-directory")
+	l.Debug("fsync filename and parent-dir")
 	err = fsync.FsyncFnameAndDir(pathname)
 	if err != nil {
 		return err
