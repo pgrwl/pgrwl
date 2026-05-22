@@ -107,11 +107,13 @@ x_stop_receiver() {
 }
 
 x_stop_receiver_rest_api() {
-   curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
+  log_info "sending: /api/v1/receiver/stop"
+  curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
 }
 
 x_start_receiver_rest_api() {
-   curl -X POST http://127.0.0.1:7070/api/v1/receiver/start
+  log_info "sending: /api/v1/receiver/start"
+  curl -X POST http://127.0.0.1:7070/api/v1/receiver/start
 }
 
 # start pg_receivewal in background and store its PID
