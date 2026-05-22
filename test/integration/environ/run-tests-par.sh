@@ -30,6 +30,7 @@ ALL_TESTS=(
   pg_007_tablespaces_localfs
   pg_008_dynstor
   pg_009_s3_remote_only_restore
+  pg_009_sftp_remote_only_restore
   pg_010_timing_parity_1
   pg_010_timing_parity_2
   pg_011_basic_flow
