@@ -91,7 +91,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 	// init replication connection
 
-	streamingConn, err := xlog.InitStreamingConn(ctx, opts.Slot)
+	streamingConn, err := xlog.OpenReplicationConn(ctx, opts.Slot)
 	if err != nil {
 		return fmt.Errorf("init streaming conn: %w", err)
 	}
@@ -100,7 +100,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	}
 	defer func() {
 		loggr.Info("closing connection")
-		xlog.CloseConn(streamingConn.Conn, loggr)
+		xlog.CloseReplicationConn(streamingConn.Conn, loggr)
 	}()
 
 	// init pgrw
@@ -113,7 +113,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		// NOTE: during reconnect attempts pgrw may hold completely different connection
 		// than the first one (which was passed during initialization: streamingConn).
 		loggr.Info("closing pgrw connection")
-		xlog.CloseConn(pgrw.Conn(), loggr)
+		xlog.CloseReplicationConn(pgrw.Conn(), loggr)
 	}()
 
 	//////////////////////////////////////////////////////////////////////

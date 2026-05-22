@@ -11,16 +11,16 @@ import (
 
 type StreamingConn struct {
 	ConnStrRepl string
-	// NOTE: connection will be closed by general utility func
+	// NOTE: connection should be closed by CloseReplicationConn()
 	Conn        *pgconn.PgConn
 	StartupInfo *StartupInfo
 }
 
-func InitStreamingConn(ctx context.Context, slot string) (*StreamingConn, error) {
+func OpenReplicationConn(ctx context.Context, applicationName string) (*StreamingConn, error) {
 	loggr := slog.With(slog.String("component", "startup-info"))
 	loggr.Info("open connection")
 
-	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", slot)
+	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", applicationName)
 	conn, err := pgconn.Connect(ctx, connStrRepl)
 	if err != nil {
 		loggr.Error("cannot establish connection",
@@ -43,9 +43,9 @@ func InitStreamingConn(ctx context.Context, slot string) (*StreamingConn, error)
 	}, nil
 }
 
-// CloseConn - utility function that closes connection (if this conn isn't nil and wasn't already closed),
+// CloseReplicationConn - utility function that closes connection (if this conn isn't nil and wasn't already closed),
 // with logging and shutdown timeout.
-func CloseConn(conn *pgconn.PgConn, loggr *slog.Logger) {
+func CloseReplicationConn(conn *pgconn.PgConn, loggr *slog.Logger) {
 	if conn == nil {
 		loggr.Info("connection is nil")
 		return
