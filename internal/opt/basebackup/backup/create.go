@@ -10,6 +10,7 @@ import (
 	"github.com/pgrwl/pgrwl/config"
 	"github.com/pgrwl/pgrwl/internal/opt/api"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
+	"github.com/pgrwl/pgrwl/internal/opt/shared/x/connx"
 )
 
 type CreateBaseBackupOpts struct {
@@ -40,10 +41,8 @@ func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupd
 		return nil, err
 	}
 	defer func() {
-		loggr.Info("closing connection")
-		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = conn.Close(closeCtx)
+		loggr.Info("closing basebackup connection")
+		connx.CloseConn(conn, loggr)
 	}()
 
 	// init module

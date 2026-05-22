@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	stormock "github.com/pgrwl/pgrwl/internal/opt/shared/storecrypt"
 
 	"github.com/pgrwl/pgrwl/config"
@@ -18,7 +19,7 @@ type MockPgReceiveWal struct {
 	CurrentWAL string
 	RunFunc    func(ctx context.Context) error
 	StatusFunc func() *xlog.StreamStatus
-	CloseFunc  func(ctx context.Context) error
+	ConnFunc   func() *pgconn.PgConn
 }
 
 var _ xlog.PgReceiveWal = &MockPgReceiveWal{}
@@ -45,9 +46,9 @@ func (m *MockPgReceiveWal) WalSegSz() uint64 {
 	return 16 * 1024 * 1024
 }
 
-func (m *MockPgReceiveWal) Close(ctx context.Context) error {
-	if m.CloseFunc != nil {
-		return m.CloseFunc(ctx)
+func (m *MockPgReceiveWal) Conn() *pgconn.PgConn {
+	if m.ConnFunc != nil {
+		return m.ConnFunc()
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/pgrwl/pgrwl/internal/opt/api/streamapi/backupapi"
 	"github.com/pgrwl/pgrwl/internal/opt/api/streamapi/receiveapi"
+	"github.com/pgrwl/pgrwl/internal/opt/shared/x/connx"
 
 	"github.com/pgrwl/pgrwl/internal/opt/api/streamapi"
 
@@ -100,12 +101,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	}
 	defer func() {
 		loggr.Info("closing connection")
-		closeCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		err := streamingConn.Close(closeCtx)
-		if err != nil {
-			loggr.Warn("closing conn", slog.Any("err", err))
-		}
+		connx.CloseConn(streamingConn.Conn, loggr)
 	}()
 
 	// init pgrw
@@ -118,12 +114,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		// NOTE: during reconnect attempts pgrw may hold completely different connection
 		// than the first one (which was passed during initialization: streamingConn).
 		loggr.Info("closing pgrw connection")
-		closeCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		err := pgrw.Close(closeCtx)
-		if err != nil {
-			loggr.Warn("closing pgrw conn", slog.Any("err", err))
-		}
+		connx.CloseConn(pgrw.Conn(), loggr)
 	}()
 
 	//////////////////////////////////////////////////////////////////////

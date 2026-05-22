@@ -25,7 +25,7 @@ type PgReceiveWal interface {
 	Status() *StreamStatus
 	CurrentOpenWALFileName() string
 	WalSegSz() uint64
-	Close(ctx context.Context) error
+	Conn() *pgconn.PgConn
 }
 
 type pgReceiveWal struct {
@@ -325,11 +325,6 @@ func (pgrw *pgReceiveWal) WalSegSz() uint64 {
 	return pgrw.walSegSz
 }
 
-func (pgrw *pgReceiveWal) Close(ctx context.Context) error {
-	if pgrw.conn == nil {
-		return nil
-	}
-	err := pgrw.conn.Close(ctx)
-	pgrw.conn = nil
-	return err
+func (pgrw *pgReceiveWal) Conn() *pgconn.PgConn {
+	return pgrw.conn
 }
