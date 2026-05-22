@@ -175,7 +175,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			}
 		}()
 
-		if err := basebackupSupervisor.RunCron(ctx); err != nil {
+		if err := basebackupSupervisor.RunCron(receiverCtx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
