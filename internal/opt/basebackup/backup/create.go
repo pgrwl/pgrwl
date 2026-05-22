@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pgrwl/pgrwl/config"
+	"github.com/pgrwl/pgrwl/internal/core/xlog"
 	"github.com/pgrwl/pgrwl/internal/opt/api"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
-	"github.com/pgrwl/pgrwl/internal/opt/shared/x/connx"
 )
 
 type CreateBaseBackupOpts struct {
@@ -42,7 +42,7 @@ func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupd
 	}
 	defer func() {
 		loggr.Info("closing basebackup connection")
-		connx.CloseConn(conn, loggr)
+		xlog.CloseConn(conn, loggr)
 	}()
 
 	// init module
