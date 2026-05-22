@@ -10,22 +10,28 @@ import (
 
 type StreamingConn struct {
 	ConnStrRepl string
+	// NOTE: connection will be closed by general utility func
 	Conn        *pgconn.PgConn
 	StartupInfo *StartupInfo
 }
 
 func InitStreamingConn(ctx context.Context, slot string) (*StreamingConn, error) {
+	loggr := slog.With(slog.String("component", "startup-info"))
+	loggr.Info("open connection")
+
 	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", slot)
 	conn, err := pgconn.Connect(ctx, connStrRepl)
 	if err != nil {
-		slog.Error("cannot establish connection",
-			slog.String("component", "pgreceivewal"),
+		loggr.Error("cannot establish connection",
 			slog.Any("err", err),
 		)
 		return nil, err
 	}
 	startupInfo, err := GetStartupInfo(conn)
 	if err != nil {
+		loggr.Error("cannot get startup info",
+			slog.Any("err", err),
+		)
 		return nil, err
 	}
 
@@ -34,13 +40,4 @@ func InitStreamingConn(ctx context.Context, slot string) (*StreamingConn, error)
 		Conn:        conn,
 		StartupInfo: startupInfo,
 	}, nil
-}
-
-func (c *StreamingConn) Close(ctx context.Context) error {
-	if c.Conn == nil {
-		return nil
-	}
-	err := c.Conn.Close(ctx)
-	c.Conn = nil
-	return err
 }
