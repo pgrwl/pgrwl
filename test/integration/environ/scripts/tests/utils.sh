@@ -73,8 +73,6 @@ x_kill_proc_rmrf_tmp() {
 x_remake_dirs() {
   log_info "recreate dirs (bb, wals) for test: ${TEST_NAME}"
 
-  x_kill_proc_rmrf_tmp
-
   # recreate localFS
   rm -rf "${BASEBACKUP_PATH}" && mkdir -p "${BASEBACKUP_PATH}"
   rm -rf "${WAL_PATH}" && mkdir -p "${WAL_PATH}"
@@ -106,6 +104,14 @@ x_stop_receiver() {
     kill -TERM "$RECEIVER_PID" 2>/dev/null || true
     wait "$RECEIVER_PID" 2>/dev/null || true
   fi
+}
+
+x_stop_receiver_rest_api() {
+   curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
+}
+
+x_start_receiver_rest_api() {
+   curl -X POST http://127.0.0.1:7070/api/v1/receiver/start
 }
 
 # start pg_receivewal in background and store its PID

@@ -50,6 +50,7 @@ EOF
 
 x_backup_restore_with_toxiproxy() {
   echo_delim "cleanup state"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_toxiproxy_setup_minio
   x_remake_config

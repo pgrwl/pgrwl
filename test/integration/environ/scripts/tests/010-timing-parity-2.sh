@@ -83,6 +83,7 @@ x_backup_restore() {
   local target_lsn
 
   echo_delim "cleanup state"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
 

@@ -232,6 +232,7 @@ x_expect_duplicate_basebackup_conflict_if_running() {
 
 x_test_stream_api_basebackup() {
   echo_delim "cleanup"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
 

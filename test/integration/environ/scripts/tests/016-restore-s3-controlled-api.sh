@@ -13,7 +13,7 @@ x_remake_config() {
      "slot": "pgrwl_v5",
      "no_loop": true,
      "uploader": {
-       "sync_interval": "1s",
+       "sync_interval": "5s",
        "max_concurrency": 4
      }
   },
@@ -26,7 +26,7 @@ x_remake_config() {
     "cron": "*/50 * * * *"
   },
   "storage": {
-    "name": "sftp",
+    "name": "s3",
     "compression": {
       "algo": "gzip"
     },
@@ -34,22 +34,22 @@ x_remake_config() {
       "algo": "aes-256-gcm",
       "pass": "qwerty123"
     },
-    "sftp": {
-      "host": "sshd",
-      "port": 22,
-      "base_dir": "/home/testuser",
-      "user": "testuser",
-      "pkey_path": "/var/lib/postgresql/.ssh/id_ed25519"
+    "s3": {
+      "url": "https://minio:9000",
+      "access_key_id": "minioadmin",
+      "secret_access_key": "minioadmin123",
+      "bucket": "${TEST_NAME}",
+      "region": "main",
+      "use_path_style": true,
+      "disable_ssl": true
     }
   }
 }
 EOF
-
 }
 
 x_backup_restore() {
   echo_delim "cleanup state"
-  chmod 0600 /var/lib/postgresql/.ssh/id_ed25519
   x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
@@ -62,48 +62,48 @@ x_backup_restore() {
   # run wal-receivers
   echo_delim "running wal-receivers"
   x_start_receiver "/tmp/config.json"
-  sleep 10
 
-  # make a basebackup before doing anything
-  echo_delim "creating basebackup"
-  pg_basebackup \
-    --pgdata="${BASEBACKUP_PATH}/data" \
-    --wal-method=none \
-    --checkpoint=fast \
-    --progress \
-    --no-password \
-    --verbose
+  # make a backup before doing anything
+  echo_delim "creating backup"
+  /usr/local/bin/pgrwl backup -c "/tmp/config.json"
 
-  # trying to write ~100 of WAL files as quick as possible
-  x_generate_wal 100
+  # run inserts in a background
+  chmod +x "${BACKGROUND_INSERTS_SCRIPT_PATH}"
+  nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
+
+  # fill with 1M rows
+  echo_delim "running pgbench"
+  pgbench -i -s 10 postgres
+
+  # wait a little
+  sleep 5
+
+  # stop inserts
+  pkill -f inserts.sh
 
   # remember the state
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
-  echo_delim "waiting upload"
-  sleep 10
-
   # stop cluster, cleanup data
   echo_delim "teardown"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   xpg_teardown
 
   # restore from backup
   echo_delim "restoring backup"
-  mv "${BASEBACKUP_PATH}/data" "${PGDATA}"
+  /usr/local/bin/pgrwl restore --dest="${PGDATA}" -c "/tmp/config.json"
   chmod 0750 "${PGDATA}"
   chown -R postgres:postgres "${PGDATA}"
   touch "${PGDATA}/recovery.signal"
+
+  # prepare archive (all partial files contain valid wal-segments)
+  find "${WAL_PATH}" -type f -name "*.partial" -exec bash -c 'for f; do mv -v "$f" "${f%.partial}"; done' _ {} +
 
   # fix configs
   xpg_config
   cat <<EOF >>"${PG_CFG}"
 restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
 EOF
-
-  # run serve-mode
-  echo_delim "running wal fetcher"
-  x_start_serving "/tmp/config.json"
 
   # run restored cluster
   echo_delim "running cluster"
@@ -117,6 +117,13 @@ EOF
   echo_delim "running diff on pg_dumpall dumps (before vs after)"
   pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
   diff "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
+
+  # read the latest rec
+  echo_delim "read latest applied records"
+  echo "table content:"
+  psql --pset pager=off -c "select * from public.tslog;"
+  echo "insert log content:"
+  tail -10 "${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}"
 
   echo_delim "run post_restore_check.sql"
   x_run_post_restore_check
