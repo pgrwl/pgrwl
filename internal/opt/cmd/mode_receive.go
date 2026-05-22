@@ -51,6 +51,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	ctx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
+	receiverCtx, cancelReceiver := context.WithCancel(ctx)
+	defer cancelReceiver()
+
 	// fatalErrCh is used only by critical components.
 	//
 	// Critical:
@@ -138,7 +141,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 		loggr.Info("wal-receiver started")
 
-		if err := pgrw.Run(ctx); err != nil {
+		if err := pgrw.Run(receiverCtx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				loggr.Info("wal-receiver stopped", slog.String("reason", "context canceled"))
 				return
@@ -206,10 +209,11 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 		handlers := streamapi.Init(&streamapi.Opts{
 			Receive: &receiveapi.Opts{
-				PGRW:    pgrw,
-				BaseDir: opts.ReceiveDirectory,
-				Storage: walStor,
-				Cfg:     cfg,
+				PGRW:         pgrw,
+				BaseDir:      opts.ReceiveDirectory,
+				Storage:      walStor,
+				Cfg:          cfg,
+				StopReceiver: cancelReceiver,
 			},
 			Backup: &backupapi.Opts{
 				Supervisor: basebackupSupervisor,
@@ -247,7 +251,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			PGRW:             pgrw,
 		})
 
-		if err := u.Run(ctx); err != nil {
+		if err := u.Run(receiverCtx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}

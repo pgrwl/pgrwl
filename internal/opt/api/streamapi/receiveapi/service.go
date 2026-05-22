@@ -3,7 +3,10 @@ package receiveapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/pgrwl/pgrwl/internal/opt/api"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
 	st "github.com/pgrwl/pgrwl/internal/opt/shared/storecrypt"
+	"github.com/pgrwl/pgrwl/internal/opt/shared/x/fsx"
 
 	"github.com/pgrwl/pgrwl/internal/core/xlog"
 )
@@ -23,23 +27,27 @@ type Service interface {
 	FullRedactedConfig(ctx context.Context) *config.Config
 	ListWALFiles(ctx context.Context) ([]WALFile, error)
 	ListBackups(ctx context.Context) ([]Backup, error)
+	GetWalFile(ctx context.Context, filename string) (io.ReadCloser, error)
+	StopReceiver()
 }
 
 type svc struct {
-	l       *slog.Logger
-	pgrw    xlog.PgReceiveWal // direct access to running state
-	baseDir string
-	storage *st.VariadicStorage
+	l            *slog.Logger
+	pgrw         xlog.PgReceiveWal // direct access to running state
+	baseDir      string
+	storage      *st.VariadicStorage
+	stopReceiver func()
 }
 
 var _ Service = &svc{}
 
 func NewService(opts *Opts) Service {
 	return &svc{
-		l:       slog.With("component", "receive-service"),
-		pgrw:    opts.PGRW,
-		baseDir: opts.BaseDir,
-		storage: opts.Storage,
+		l:            slog.With("component", "receive-service"),
+		pgrw:         opts.PGRW,
+		baseDir:      opts.BaseDir,
+		storage:      opts.Storage,
+		stopReceiver: opts.StopReceiver,
 	}
 }
 
@@ -185,4 +193,32 @@ func (s *svc) ListBackups(ctx context.Context) ([]Backup, error) {
 	})
 
 	return backups, nil
+}
+
+func (s *svc) GetWalFile(ctx context.Context, filename string) (io.ReadCloser, error) {
+	filePath := filepath.Join(s.baseDir, filename)
+	partialFilePath := filePath + xlog.PartialSuffix
+
+	s.log().Debug("wal-restore, fetching local file", slog.String("path", filePath))
+	if fsx.FileExists(filePath) {
+		s.log().Debug("wal-restore, found local file", slog.String("path", filePath))
+		//nolint:gosec
+		return os.Open(filePath)
+	}
+	if fsx.FileExists(partialFilePath) {
+		s.log().Debug("wal-restore, found local partial file", slog.String("path", partialFilePath))
+		//nolint:gosec
+		return os.Open(partialFilePath)
+	}
+
+	if s.storage != nil {
+		s.log().Debug("wal-restore, fetching remote file", slog.String("filename", filename))
+		return s.storage.Get(ctx, filename)
+	}
+
+	return nil, fmt.Errorf("cannot fetch file: %s", filename)
+}
+
+func (s *svc) StopReceiver() {
+	s.stopReceiver()
 }
