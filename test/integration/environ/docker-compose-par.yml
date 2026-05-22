@@ -92,6 +92,11 @@ services:
     container_name: pg_014_stream_api_bb
     entrypoint: /var/lib/postgresql/scripts/tests/014-stream-api-basebackup.sh
 
+  pg_016_restore_s3_controlled_api:
+    <<: *pg_test_common
+    container_name: pg_016_restore_s3_controlled_api
+    entrypoint: /var/lib/postgresql/scripts/tests/016-restore-s3-controlled-api.sh
+
   sshd:
     build:
       context: .

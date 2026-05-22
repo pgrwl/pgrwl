@@ -157,7 +157,7 @@ storage:
     region: ${PGRWL_STORAGE_S3_REGION}
 `)
 
-	cfg, err := FromFile(path, ModeReceive)
+	cfg, err := FromFile(path)
 	assert.NoError(t, err)
 	assert.Equal(t, "/tmp/pgrwl", cfg.Main.Directory)
 	assert.Equal(t, 10*time.Second, cfg.Receiver.Uploader.SyncIntervalParsed)
@@ -169,7 +169,7 @@ func TestFromEnvsAppliesOverridesAndParsesValues(t *testing.T) {
 	resetConfigForTest(t)
 	setValidReceiveEnvForTest(t)
 
-	cfg, err := FromEnvs(ModeReceive)
+	cfg, err := FromEnvs()
 	assert.NoError(t, err)
 	assert.Equal(t, 9090, cfg.Main.ListenPort)
 	assert.Equal(t, "/env/pgrwl", cfg.Main.Directory)
@@ -188,7 +188,7 @@ func TestFromEnvsInvalidValuesReturnErrors(t *testing.T) {
 	setValidReceiveEnvForTest(t)
 	t.Setenv("PGRWL_RECEIVER_UPLOADER_SYNC_INTERVAL", "not-a-duration")
 
-	cfg, err := FromEnvs(ModeReceive)
+	cfg, err := FromEnvs()
 	assert.Nil(t, cfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "receiver.uploader.sync_interval cannot parse")
@@ -198,13 +198,11 @@ func TestValidate_Config(t *testing.T) {
 	tests := []struct {
 		name        string
 		cfg         *Config
-		mode        string
 		expectError bool
 		wantMsgs    []string // optional substring checks
 	}{
 		{
 			name: "valid receive config with s3",
-			mode: ModeReceive,
 			cfg: &Config{
 				Main: MainConfig{
 					ListenPort: 8080,
@@ -233,20 +231,17 @@ func TestValidate_Config(t *testing.T) {
 		},
 		{
 			name: "invalid mode and missing main",
-			mode: "invalid",
 			cfg: &Config{
 				Main: MainConfig{},
 			},
 			expectError: true,
 			wantMsgs: []string{
-				"invalid mode",
 				"main.listen_port is required",
 				"main.directory is required",
 			},
 		},
 		{
 			name: "invalid uploader and retention durations",
-			mode: ModeReceive,
 			cfg: &Config{
 				Main: MainConfig{
 					ListenPort: 1,
@@ -278,7 +273,6 @@ func TestValidate_Config(t *testing.T) {
 		},
 		{
 			name: "invalid sftp config missing pass or key",
-			mode: ModeReceive,
 			cfg: &Config{
 				Main: MainConfig{
 					ListenPort: 1234,
@@ -310,7 +304,7 @@ func TestValidate_Config(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validate(tt.cfg, tt.mode)
+			err := validate(tt.cfg)
 			if tt.expectError {
 				assert.Error(t, err)
 				for _, want := range tt.wantMsgs {
@@ -342,7 +336,7 @@ func TestValidate_SuccessMinimalReceiveConfig(t *testing.T) {
 		},
 	}
 
-	err := validate(cfg, ModeReceive)
+	err := validate(cfg)
 	assert.Error(t, err)
 	assert.Equal(t, 10*time.Second, cfg.Receiver.Uploader.SyncIntervalParsed)
 }

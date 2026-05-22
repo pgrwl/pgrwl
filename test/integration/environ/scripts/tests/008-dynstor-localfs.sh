@@ -5,7 +5,7 @@ set -euo pipefail
 # clean up on exit or interrupt
 cleanup() {
   log_info "Cleaning up"
-  x_stop_receiver
+  x_kill_receiver_daemon
 }
 trap cleanup EXIT INT TERM
 
@@ -98,6 +98,7 @@ EOF
 
 x_backup_restore() {
   echo_delim "cleanup state"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
 
@@ -108,7 +109,7 @@ x_backup_restore() {
 
   # run wal-receivers (zstd compression, no encryption)
   echo_delim "running wal-receiver with zstd compression, no encryption"
-  x_start_receiver "/tmp/config-zstd.yaml"
+  x_run_receiver_daemon "/tmp/config-zstd.yaml"
 
   # make a basebackup before doing anything
   echo_delim "creating basebackup"
@@ -130,8 +131,8 @@ x_backup_restore() {
   for config_file in "${config_files[@]}"; do
     # rerun receiver with a new config
     echo_delim "running wal-receiver with config: ${config_file}"
-    x_stop_receiver
-    x_start_receiver "${config_file}"
+    x_kill_receiver_daemon
+    x_run_receiver_daemon "${config_file}"
 
     # generate some wals
     x_generate_wal 25
@@ -145,7 +146,9 @@ x_backup_restore() {
 
   # stop cluster, cleanup data
   echo_delim "teardown"
-  x_stop_receiver
+  x_kill_receiver_daemon
+  x_run_receiver_daemon "/tmp/config-zstd.yaml"
+  x_stop_receiver_rest_api
   xpg_teardown
 
   # restore from backup
@@ -158,12 +161,8 @@ x_backup_restore() {
   # fix configs
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
-
-  # run serve-mode
-  echo_delim "running wal fetcher"
-  nohup /usr/local/bin/pgrwl daemon -c "/tmp/config-gzip-aes.yaml" -m serve >>"$LOG_FILE" 2>&1 &
 
   # run restored cluster
   echo_delim "running cluster"

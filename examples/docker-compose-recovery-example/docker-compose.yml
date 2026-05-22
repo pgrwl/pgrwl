@@ -28,7 +28,7 @@ services:
       PGPORT: 5432
       PGUSER: postgres
       PGPASSWORD: postgres
-    command: daemon -c /tmp/configs/config.yml -m receive
+    command: daemon -c /tmp/configs/config.yml
     volumes:
       - shared-data:/mnt
       - ./files/configs/config.yml:/tmp/configs/config.yml:ro

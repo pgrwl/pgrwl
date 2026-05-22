@@ -111,7 +111,7 @@ func (r *backupRunner) runReserved(ctx context.Context, source string) (err erro
 		return fmt.Errorf("create basebackup: %w", err)
 	}
 
-	r.l.Info("basebackup completed",
+	r.l.Info("basebackup runner completed",
 		slog.String("source", source),
 	)
 

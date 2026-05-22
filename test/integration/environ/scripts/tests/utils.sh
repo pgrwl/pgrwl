@@ -73,8 +73,6 @@ x_kill_proc_rmrf_tmp() {
 x_remake_dirs() {
   log_info "recreate dirs (bb, wals) for test: ${TEST_NAME}"
 
-  x_kill_proc_rmrf_tmp
-
   # recreate localFS
   rm -rf "${BASEBACKUP_PATH}" && mkdir -p "${BASEBACKUP_PATH}"
   rm -rf "${WAL_PATH}" && mkdir -p "${WAL_PATH}"
@@ -86,26 +84,36 @@ x_remake_dirs() {
 }
 
 # start the receiver in background and store its PID
-x_start_receiver() {
+x_run_receiver_daemon() {
   local cfg=$1
   log_info "starting receiver with $cfg"
 
   # Run the receiver in background.
   #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
   #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
-  /usr/local/bin/pgrwl daemon -c "${cfg}" -m receive \
+  /usr/local/bin/pgrwl daemon -c "${cfg}" \
     > >(tee -a "$LOG_FILE") \
     2> >(tee -a "$LOG_FILE" >&2) &
 
   RECEIVER_PID=$!
 }
 
-x_stop_receiver() {
+x_kill_receiver_daemon() {
   if [[ -n "${RECEIVER_PID:-}" ]]; then
     log_info "stopping receiver (PID $RECEIVER_PID)"
     kill -TERM "$RECEIVER_PID" 2>/dev/null || true
     wait "$RECEIVER_PID" 2>/dev/null || true
   fi
+}
+
+x_stop_receiver_rest_api() {
+  log_info "sending: /api/v1/receiver/stop"
+  curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
+}
+
+x_start_receiver_rest_api() {
+  log_info "sending: /api/v1/receiver/start"
+  curl -X POST http://127.0.0.1:7070/api/v1/receiver/start
 }
 
 # start pg_receivewal in background and store its PID
@@ -138,25 +146,6 @@ x_generate_wal() {
     psql -U postgres -c 'DROP TABLE IF EXISTS xxx; SELECT pg_switch_wal(); CREATE TABLE IF NOT EXISTS xxx(id serial);' \
       >/dev/null 2>&1
   done
-}
-
-x_start_serving() {
-  local cfg=$1
-  log_info "starting wal-serving with $cfg"
-
-  # Run the 'serve' mode in background.
-  #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
-  #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
-  /usr/local/bin/pgrwl daemon -c "${cfg}" -m serve \
-    > >(tee -a "$LOG_FILE") \
-    2> >(tee -a "$LOG_FILE" >&2) &
-
-  SERVE_PID=$!
-
-  # Wait for the HTTP server to be ready before returning.
-  # PostgreSQL's restore_command connects to this port immediately on startup;
-  # without this wait there is a race where the command fails and recovery aborts.
-  x_wait_http_ok "http://127.0.0.1:7070/healthz" 30
 }
 
 x_search_errors_in_logs_or_fatal() {

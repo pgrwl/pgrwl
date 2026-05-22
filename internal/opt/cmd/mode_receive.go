@@ -36,6 +36,202 @@ type ReceiveModeOpts struct {
 	ListenPort       int
 }
 
+// receiverController manages the lifecycle of the WAL receiver, archive
+// supervisor, and basebackup supervisor as a restartable unit. The HTTP server
+// and storage are not part of this unit and remain running across stop/start.
+type receiverController struct {
+	mu       sync.Mutex
+	startMu  sync.Mutex
+	pgrw     xlog.PgReceiveWal
+	rctx     context.Context
+	cancel   context.CancelFunc
+	running  bool
+	stopping bool
+	genWG    sync.WaitGroup
+
+	outerCtx     context.Context
+	opts         *ReceiveModeOpts
+	cfg          *config.Config
+	walStor      *st.VariadicStorage
+	bbSupervisor backupsv.BaseBackupSupervisor
+	wg           *sync.WaitGroup
+	loggr        *slog.Logger
+	sendFatalErr func(error)
+}
+
+func (r *receiverController) GetPgrw() xlog.PgReceiveWal {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pgrw
+}
+
+func (r *receiverController) Stop() {
+	r.mu.Lock()
+	if !r.running {
+		r.mu.Unlock()
+		return
+	}
+	r.stopping = true
+	cancel := r.cancel
+	r.mu.Unlock()
+
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		r.genWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(shutdownTimeout):
+		r.loggr.Error("receiver stop timed out waiting for goroutines",
+			slog.Duration("timeout", shutdownTimeout),
+		)
+	}
+
+	r.mu.Lock()
+	r.running = false
+	r.stopping = false
+	r.mu.Unlock()
+}
+
+func (r *receiverController) Start() error {
+	if !r.startMu.TryLock() {
+		return fmt.Errorf("receiver start already in progress")
+	}
+	defer r.startMu.Unlock()
+
+	r.mu.Lock()
+	running := r.running
+	stopping := r.stopping
+	r.mu.Unlock()
+
+	if running {
+		return fmt.Errorf("receiver is already running")
+	}
+	if stopping {
+		return fmt.Errorf("receiver is stopping")
+	}
+
+	newPgrw, err := initPgrw(r.outerCtx, r.opts)
+	if err != nil {
+		return fmt.Errorf("init wal receiver: %w", err)
+	}
+
+	newRctx, newCancel := context.WithCancel(r.outerCtx) //nolint:gosec
+
+	r.mu.Lock()
+	r.pgrw = newPgrw
+	r.rctx = newRctx
+	r.cancel = newCancel
+	r.mu.Unlock()
+
+	r.launch(newRctx, newPgrw)
+	return nil
+}
+
+func (r *receiverController) launch(rctx context.Context, pgrw xlog.PgReceiveWal) {
+	r.mu.Lock()
+	r.running = true
+	r.stopping = false
+	r.mu.Unlock()
+
+	//////////////////////////////////////////////////////////////////////
+	// Main WAL receiver loop.
+	//
+	// Critical component. Any error or panic is fatal.
+
+	r.wg.Add(1)
+	r.genWG.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer r.genWG.Done()
+
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.sendFatalErr(fmt.Errorf("wal receiver panicked: %v", rec))
+			}
+		}()
+
+		r.loggr.Info("wal-receiver started")
+
+		if err := pgrw.Run(rctx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				r.loggr.Info("wal-receiver stopped", slog.String("reason", "context canceled"))
+				return
+			}
+
+			r.sendFatalErr(fmt.Errorf("streaming failed: %w", err))
+			return
+		}
+
+		r.loggr.Info("wal-receiver stopped")
+	}()
+
+	//////////////////////////////////////////////////////////////////////
+	// Basebackup supervisor.
+	//
+	// Optional/non-critical component in merged receive mode.
+	//
+	// If it fails, WAL receiving must continue. Errors are logged only.
+	// This starts the cron-based backup daemon only when backup.cron is set.
+
+	r.wg.Add(1)
+	r.genWG.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer r.genWG.Done()
+
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.loggr.Error("basebackup supervisor panicked",
+					slog.Any("panic", rec),
+					slog.String("goroutine", "basebackup-supervisor"),
+				)
+			}
+		}()
+
+		if err := r.bbSupervisor.RunCron(rctx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+
+			r.loggr.Error("basebackup supervisor failed", slog.Any("err", err))
+		}
+	}()
+
+	//////////////////////////////////////////////////////////////////////
+	// ArchiveSupervisor.
+
+	r.wg.Add(1)
+	r.genWG.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer r.genWG.Done()
+
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.sendFatalErr(fmt.Errorf("wal archive supervisor panicked: %v", rec))
+			}
+		}()
+
+		u := receivesv.NewArchiveSupervisor(r.cfg, r.walStor, &receivesv.Opts{
+			ReceiveDirectory: r.opts.ReceiveDirectory,
+			PGRW:             pgrw,
+		})
+
+		if err := u.Run(rctx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+
+			r.sendFatalErr(fmt.Errorf("run wal archive supervisor: %w", err))
+		}
+	}()
+}
+
 func RunReceiveMode(opts *ReceiveModeOpts) error {
 	cfg, err := config.Cfg()
 	if err != nil {
@@ -50,6 +246,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 	ctx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
+
+	receiverCtx, cancelReceiver := context.WithCancel(ctx)
+	defer cancelReceiver()
 
 	// fatalErrCh is used only by critical components.
 	//
@@ -121,66 +320,21 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 	var wg sync.WaitGroup
 
-	//////////////////////////////////////////////////////////////////////
-	// Main WAL receiver loop.
-	//
-	// Critical component. Any error or panic is fatal.
+	rc := &receiverController{
+		pgrw:         pgrw,
+		rctx:         receiverCtx,
+		cancel:       cancelReceiver,
+		outerCtx:     ctx,
+		opts:         opts,
+		cfg:          cfg,
+		walStor:      walStor,
+		bbSupervisor: basebackupSupervisor,
+		wg:           &wg,
+		loggr:        loggr,
+		sendFatalErr: sendFatalErr,
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		defer func() {
-			if r := recover(); r != nil {
-				sendFatalErr(fmt.Errorf("wal receiver panicked: %v", r))
-			}
-		}()
-
-		loggr.Info("wal-receiver started")
-
-		if err := pgrw.Run(ctx); err != nil {
-			if errors.Is(err, context.Canceled) {
-				loggr.Info("wal-receiver stopped", slog.String("reason", "context canceled"))
-				return
-			}
-
-			sendFatalErr(fmt.Errorf("streaming failed: %w", err))
-			return
-		}
-
-		loggr.Info("wal-receiver stopped")
-	}()
-
-	//////////////////////////////////////////////////////////////////////
-	// Basebackup supervisor.
-	//
-	// Optional/non-critical component in merged receive mode.
-	//
-	// If it fails, WAL receiving must continue. Errors are logged only.
-	// This starts the cron-based backup daemon only when backup.cron is set.
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		defer func() {
-			if r := recover(); r != nil {
-				loggr.Error("basebackup supervisor panicked",
-					slog.Any("panic", r),
-					slog.String("goroutine", "basebackup-supervisor"),
-				)
-			}
-		}()
-
-		if err := basebackupSupervisor.RunCron(ctx); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-
-			loggr.Error("basebackup supervisor failed", slog.Any("err", err))
-			return
-		}
-	}()
+	rc.launch(receiverCtx, pgrw)
 
 	//////////////////////////////////////////////////////////////////////
 	// HTTP server.
@@ -196,9 +350,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		defer wg.Done()
 
 		defer func() {
-			if r := recover(); r != nil {
+			if rec := recover(); rec != nil {
 				loggr.Error("http server panicked",
-					slog.Any("panic", r),
+					slog.Any("panic", rec),
 					slog.String("goroutine", "http-server"),
 				)
 			}
@@ -206,10 +360,12 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 		handlers := streamapi.Init(&streamapi.Opts{
 			Receive: &receiveapi.Opts{
-				PGRW:    pgrw,
-				BaseDir: opts.ReceiveDirectory,
-				Storage: walStor,
-				Cfg:     cfg,
+				GetPgrw:       rc.GetPgrw,
+				BaseDir:       opts.ReceiveDirectory,
+				Storage:       walStor,
+				Cfg:           cfg,
+				StopReceiver:  rc.Stop,
+				StartReceiver: rc.Start,
 			},
 			Backup: &backupapi.Opts{
 				Supervisor: basebackupSupervisor,
@@ -226,34 +382,6 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			}
 
 			loggr.Error("http server failed", slog.Any("err", err))
-		}
-	}()
-
-	//////////////////////////////////////////////////////////////////////
-	// ArchiveSupervisor.
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		defer func() {
-			if r := recover(); r != nil {
-				sendFatalErr(fmt.Errorf("wal archive supervisor panicked: %v", r))
-			}
-		}()
-
-		u := receivesv.NewArchiveSupervisor(cfg, walStor, &receivesv.Opts{
-			ReceiveDirectory: opts.ReceiveDirectory,
-			PGRW:             pgrw,
-		})
-
-		if err := u.Run(ctx); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-
-			sendFatalErr(fmt.Errorf("run wal archive supervisor: %w", err))
-			return
 		}
 	}()
 

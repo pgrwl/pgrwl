@@ -115,7 +115,7 @@ backup:
 EOF
 
 PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
-    pgrwl daemon -c config.yml -m receive
+    pgrwl daemon -c config.yml
 ```
 
 **More examples**
@@ -159,7 +159,7 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
 
   ```ini
   # postgresql.conf
-  restore_command = 'pgrwl restore-command --serve-addr=<host>:<port> %f %p'
+  restore_command = 'pgrwl restore-command --addr=<host>:<port> %f %p'
   ```
 
 This allows a crashed cluster to be restored to any point covered by the configured recovery window.

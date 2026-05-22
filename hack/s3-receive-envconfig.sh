@@ -14,7 +14,6 @@ export PGPASSWORD=postgres
 ######################################################################
 
 # main
-export PGRWL_DAEMON_MODE=receive
 export PGRWL_MAIN_LISTEN_PORT=7070
 export PGRWL_MAIN_DIRECTORY=wals
 # receiver

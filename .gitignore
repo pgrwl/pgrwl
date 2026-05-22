@@ -27,5 +27,6 @@ test_logs/
 bench-runs/
 
 # in progress
+.claude
 AGENTS.md
 CODESTYLE.md

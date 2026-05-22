@@ -50,6 +50,7 @@ EOF
 
 x_backup_restore() {
   echo_delim "cleanup state"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
 
@@ -60,7 +61,7 @@ x_backup_restore() {
 
   # run wal-receivers
   echo_delim "running wal-receivers"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
 
   # make a backup before doing anything
   echo_delim "creating backup"
@@ -85,7 +86,7 @@ x_backup_restore() {
 
   # stop cluster, cleanup data
   echo_delim "teardown"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   xpg_teardown
 
   # restore from backup
@@ -101,12 +102,11 @@ x_backup_restore() {
   # fix configs
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
-  # run serve-mode
   echo_delim "running wal fetcher"
-  x_start_serving "/tmp/config.json"
+  x_stop_receiver_rest_api
 
   # run restored cluster
   echo_delim "running cluster"

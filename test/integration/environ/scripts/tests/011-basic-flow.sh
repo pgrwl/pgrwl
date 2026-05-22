@@ -44,7 +44,6 @@ export PGUSER="postgres"
 export PGPASSWORD="postgres"
 
 PGRWL_RECEIVE_PID=""
-PGRWL_SERVE_PID=""
 
 ###############################################################################
 # Small helper functions
@@ -87,30 +86,6 @@ stop_postgres() {
     pg_ctl -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true
   fi
 }
-
-stop_pgrwl_receive() {
-  if [[ -n "${PGRWL_RECEIVE_PID:-}" ]]; then
-    log "Stopping pgrwl receiver..."
-    kill "$PGRWL_RECEIVE_PID" >/dev/null 2>&1 || true
-    wait "$PGRWL_RECEIVE_PID" >/dev/null 2>&1 || true
-    PGRWL_RECEIVE_PID=""
-  fi
-}
-
-stop_pgrwl_serve() {
-  if [[ -n "${PGRWL_SERVE_PID:-}" ]]; then
-    log "Stopping pgrwl restore server..."
-    kill "$PGRWL_SERVE_PID" >/dev/null 2>&1 || true
-    wait "$PGRWL_SERVE_PID" >/dev/null 2>&1 || true
-    PGRWL_SERVE_PID=""
-  fi
-}
-
-cleanup() {
-  stop_pgrwl_receive
-  stop_pgrwl_serve
-}
-trap cleanup EXIT
 
 ###############################################################################
 # Phase 0. Start from a clean state
@@ -198,7 +173,9 @@ cat >"$PGRWL_CONFIG" <<EOF
 EOF
 
 log "Starting pgrwl receiver..."
-pgrwl daemon -m receive -c "$PGRWL_CONFIG" >"/tmp/pgrwl-basic/pgrwl-receive.log" 2>&1 &
+pgrwl daemon -c "$PGRWL_CONFIG" \
+  > >(tee -a "/tmp/pgrwl-basic/pgrwl-receive.log") \
+  2> >(tee -a "/tmp/pgrwl-basic/pgrwl-receive.log" >&2) &
 PGRWL_RECEIVE_PID=$!
 
 # Give the receiver a moment to connect and begin streaming.
@@ -252,7 +229,7 @@ sleep 3
 
 log "Stopping PostgreSQL and pgrwl receiver..."
 stop_postgres
-stop_pgrwl_receive
+curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
 
 log "Removing original PGDATA to simulate data loss..."
 rm -rf "$PGDATA"
@@ -270,16 +247,8 @@ chown -R postgres:postgres "$PGDATA"
 # recovery.signal tells PostgreSQL to start in archive recovery mode.
 touch "$PGDATA/recovery.signal"
 
-###############################################################################
-# Phase 9. Start pgrwl in serve mode for restore_command
-###############################################################################
-
-log "Starting pgrwl restore server..."
-pgrwl daemon -m serve -c "$PGRWL_CONFIG" >"/tmp/pgrwl-basic/pgrwl-serve.log" 2>&1 &
-PGRWL_SERVE_PID=$!
-
 cat >>"$PGDATA/postgresql.conf" <<EOF
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
 ###############################################################################

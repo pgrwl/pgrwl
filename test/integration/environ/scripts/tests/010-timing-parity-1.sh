@@ -373,7 +373,7 @@ start_pgrwl() {
 
   write_pgrwl_config
 
-  /usr/local/bin/pgrwl daemon -m receive -c "${PGRWL_CONFIG}" >"${PGRWL_LOG}" 2>&1 &
+  /usr/local/bin/pgrwl daemon -c "${PGRWL_CONFIG}" >"${PGRWL_LOG}" 2>&1 &
 
   PGRWL_PID=$!
   log "pgrwl pid=${PGRWL_PID}"

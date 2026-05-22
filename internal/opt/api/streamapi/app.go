@@ -56,6 +56,9 @@ func Init(o *Opts) http.Handler {
 	mux.Handle("GET /api/v1/redacted-config", secureChain(http.HandlerFunc(receiveHandler.FullRedactedConfig)))
 	mux.Handle("GET /api/v1/wals", secureChain(http.HandlerFunc(receiveHandler.WalsHandler)))
 	mux.Handle("GET /api/v1/backups", secureChain(http.HandlerFunc(receiveHandler.BackupsHandler)))
+	mux.Handle("GET /api/v1/wal/{filename}", secureChain(http.HandlerFunc(receiveHandler.WalFileDownloadHandler)))
+	mux.Handle("POST /api/v1/receiver/stop", secureChain(http.HandlerFunc(receiveHandler.StopReceiverHandler)))
+	mux.Handle("POST /api/v1/receiver/start", secureChain(http.HandlerFunc(receiveHandler.StartReceiverHandler)))
 
 	initOptionalHandlers(o.Cfg, mux, l)
 	return mux

@@ -97,7 +97,7 @@ x_backup_restore() {
   # run wal-receivers
   echo_delim "running wal-receivers"
   # run wal-receiver
-  nohup /usr/local/bin/pgrwl daemon -c "/tmp/config.json" -m receive >>"$LOG_FILE" 2>&1 &
+  nohup /usr/local/bin/pgrwl daemon -c "/tmp/config.json" >>"$LOG_FILE" 2>&1 &
   # run pg_receivewal
   nohup pg_receivewal -D "${PG_RECEIVEWAL_WAL_PATH}" -S pg_receivewal --no-loop --verbose --no-password --synchronous \
     --dbname "dbname=replication options=-cdatestyle=iso replication=true application_name=pg_receivewal" \
@@ -161,12 +161,11 @@ EOSQL
   xpg_config
   cat <<EOF >>"${PG_CFG}"
 #restore_command = 'cp ${WAL_PATH}/%f %p'
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
-  # run serve-mode
   echo_delim "running wal fetcher"
-  nohup /usr/local/bin/pgrwl daemon -c "/tmp/config.json" -m serve >>"$LOG_FILE" 2>&1 &
+  curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
 
   # cleanup logs
   >/var/log/postgresql/pg.log
@@ -202,7 +201,7 @@ EOF
   # run wal-receiver
   pkill -f pgrwl || true
   xpg_create_slots
-  nohup /usr/local/bin/pgrwl daemon -c "/tmp/config.json" -m receive >>"$LOG_FILE" 2>&1 &
+  nohup /usr/local/bin/pgrwl daemon -c "/tmp/config.json" >>"$LOG_FILE" 2>&1 &
   # run pg_receivewal
   nohup pg_receivewal -D "${PG_RECEIVEWAL_WAL_PATH}" -S pg_receivewal --no-loop --verbose --no-password --synchronous \
     --dbname "dbname=replication options=-cdatestyle=iso replication=true application_name=pg_receivewal" \

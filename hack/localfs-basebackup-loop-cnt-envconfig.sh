@@ -15,7 +15,6 @@ export PGPASSWORD=postgres
 ######################################################################
 
 # main
-export PGRWL_DAEMON_MODE=backup
 export PGRWL_MAIN_LISTEN_PORT=7070
 export PGRWL_MAIN_DIRECTORY=wals
 export PGRWL_LOG_LEVEL="trace"

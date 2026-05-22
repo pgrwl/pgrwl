@@ -50,6 +50,7 @@ EOF
 
 x_backup_restore_with_toxiproxy() {
   echo_delim "cleanup state"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_toxiproxy_setup_minio
   x_remake_config
@@ -59,7 +60,7 @@ x_backup_restore_with_toxiproxy() {
   xpg_start
 
   echo_delim "running wal receiver"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
 
   echo_delim "creating backup"
   /usr/local/bin/pgrwl backup -c "/tmp/config.json"
@@ -79,7 +80,7 @@ x_backup_restore_with_toxiproxy() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   echo_delim "teardown original cluster"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   xpg_teardown
 
   echo_delim "restore backup while minio is cut through toxiproxy"
@@ -94,11 +95,11 @@ x_backup_restore_with_toxiproxy() {
 
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
   echo_delim "start wal serving"
-  x_start_serving "/tmp/config.json"
+  x_stop_receiver_rest_api
 
   >/var/log/postgresql/pg.log
 

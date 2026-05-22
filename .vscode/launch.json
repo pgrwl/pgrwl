@@ -10,30 +10,11 @@
       "buildFlags": "-tags=debug",
       "args": [
         "daemon",
-        "-m",
-        "receive"
       ],
       "envFile": "${workspaceFolder}/.vscode/pg.env",
       "env": {
         "PGRWL_MAIN_DIRECTORY": "${workspaceFolder}/wals",
         "PGRWL_BACKUP_CRON": "* * * * *"
-      }
-    },
-    {
-      "name": "serve",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/cmd/pgrwl/main.go",
-      "buildFlags": "-tags=debug",
-      "args": [
-        "daemon",
-        "-m",
-        "serve"
-      ],
-      "envFile": "${workspaceFolder}/.vscode/pg.env",
-      "env": {
-        "PGRWL_MAIN_DIRECTORY": "${workspaceFolder}/wals"
       }
     },
     {

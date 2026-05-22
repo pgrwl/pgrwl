@@ -52,6 +52,7 @@ x_sql() {
 
 x_backup_restore() {
   echo_delim "cleanup"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
 
@@ -60,7 +61,7 @@ x_backup_restore() {
   xpg_start
 
   echo_delim "start receiver"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
 
   echo_delim "create base backup"
   pgrwl backup -c "/tmp/config.json"
@@ -83,7 +84,7 @@ x_backup_restore() {
   sleep 5   # simple and readable > perfect
 
   echo_delim "teardown source"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   xpg_teardown
 
   echo_delim "wipe local WAL (important!)"
@@ -98,11 +99,11 @@ x_backup_restore() {
 
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
-  echo_delim "start serve mode"
-  x_start_serving "/tmp/config.json"
+  echo_delim "serving files"
+  x_stop_receiver_rest_api
 
   echo_delim "start restored cluster"
   xpg_start

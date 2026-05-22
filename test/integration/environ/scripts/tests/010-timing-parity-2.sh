@@ -83,6 +83,7 @@ x_backup_restore() {
   local target_lsn
 
   echo_delim "cleanup state"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
 
@@ -93,7 +94,7 @@ x_backup_restore() {
   xpg_recreate_slots
 
   echo_delim "running wal-receivers"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
   x_start_pg_receivewal
 
   echo_delim "wait both receivers streaming"
@@ -126,7 +127,7 @@ x_backup_restore() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   echo_delim "teardown"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   x_stop_pg_receivewal
   xpg_teardown
 
@@ -142,11 +143,11 @@ x_backup_restore() {
 
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
   echo_delim "running wal fetcher"
-  x_start_serving "/tmp/config.json"
+  x_stop_receiver_rest_api
 
   >/var/log/postgresql/pg.log
 
