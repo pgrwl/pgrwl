@@ -21,8 +21,10 @@ func (c *basebackupCreator) Create(ctx context.Context) error {
 		return err
 	}
 
-	_, err := backup.CreateBaseBackup(&backup.CreateBaseBackupOpts{
-		Directory: c.Directory,
-	})
+	_, err := backup.CreateBaseBackup(ctx,
+		&backup.CreateBaseBackupOpts{
+			Directory: c.Directory,
+		},
+	)
 	return err
 }
