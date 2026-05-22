@@ -45,6 +45,9 @@ type receiverController struct {
 	pgrw    xlog.PgReceiveWal
 	rctx    context.Context
 	cancel  context.CancelFunc
+	running  bool
+	stopping bool
+	genWG    sync.WaitGroup
 
 	outerCtx     context.Context
 	opts         *ReceiveModeOpts
@@ -64,9 +67,21 @@ func (r *receiverController) GetPgrw() xlog.PgReceiveWal {
 
 func (r *receiverController) Stop() {
 	r.mu.Lock()
+	if !r.running {
+		r.mu.Unlock()
+		return
+	}
+	r.stopping = true
 	cancel := r.cancel
 	r.mu.Unlock()
+
 	cancel()
+	r.genWG.Wait()
+
+	r.mu.Lock()
+	r.running = false
+	r.stopping = false
+	r.mu.Unlock()
 }
 
 func (r *receiverController) Start() error {
@@ -76,10 +91,15 @@ func (r *receiverController) Start() error {
 	defer r.startMu.Unlock()
 
 	r.mu.Lock()
-	rctx := r.rctx
+	running := r.running
+	stopping := r.stopping
 	r.mu.Unlock()
-	if rctx.Err() == nil {
+
+	if running {
 		return fmt.Errorf("receiver is already running")
+	}
+	if stopping {
+		return fmt.Errorf("receiver is stopping")
 	}
 
 	newPgrw, err := initPgrw(r.outerCtx, r.opts)
@@ -100,14 +120,21 @@ func (r *receiverController) Start() error {
 }
 
 func (r *receiverController) launch(rctx context.Context, pgrw xlog.PgReceiveWal) {
+	r.mu.Lock()
+	r.running = true
+	r.stopping = false
+	r.mu.Unlock()
+
 	//////////////////////////////////////////////////////////////////////
 	// Main WAL receiver loop.
 	//
 	// Critical component. Any error or panic is fatal.
 
 	r.wg.Add(1)
+	r.genWG.Add(1)
 	go func() {
 		defer r.wg.Done()
+		defer r.genWG.Done()
 
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -139,8 +166,10 @@ func (r *receiverController) launch(rctx context.Context, pgrw xlog.PgReceiveWal
 	// This starts the cron-based backup daemon only when backup.cron is set.
 
 	r.wg.Add(1)
+	r.genWG.Add(1)
 	go func() {
 		defer r.wg.Done()
+		defer r.genWG.Done()
 
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -164,8 +193,10 @@ func (r *receiverController) launch(rctx context.Context, pgrw xlog.PgReceiveWal
 	// ArchiveSupervisor.
 
 	r.wg.Add(1)
+	r.genWG.Add(1)
 	go func() {
 		defer r.wg.Done()
+		defer r.genWG.Done()
 
 		defer func() {
 			if rec := recover(); rec != nil {
