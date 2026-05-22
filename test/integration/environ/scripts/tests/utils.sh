@@ -41,6 +41,8 @@ export PGDATABASE="postgres"
 # cleanup possible state
 
 x_remake_buckets() {
+  log_info "recreate bucket for test: ${TEST_NAME}"
+
   minio-mc alias set local https://minio:9000 minioadmin minioadmin123 --insecure
   minio-mc rb --force "local/${TEST_NAME}" --insecure || true
 
@@ -60,6 +62,8 @@ x_remake_buckets() {
 }
 
 x_kill_proc_rmrf_tmp() {
+  log_info "kill postgres/pgrwl processes, cleanup /tmp/ for test: ${TEST_NAME}"
+
   # stop all processes, clean ALL state
   sudo pkill -9 postgres || true
   sudo pkill -9 pgrwl || true
@@ -67,6 +71,8 @@ x_kill_proc_rmrf_tmp() {
 }
 
 x_remake_dirs() {
+  log_info "recreate dirs (bb, wals) for test: ${TEST_NAME}"
+
   x_kill_proc_rmrf_tmp
 
   # recreate localFS
@@ -153,6 +159,24 @@ x_start_serving() {
   x_wait_http_ok "http://127.0.0.1:7070/healthz" 30
 }
 
+x_search_errors_in_logs_or_fatal() {
+  log_info "searching for errors in pgrwl logs"
+  if [[ -f "${LOG_FILE}" ]]; then
+    if grep -qi "error" "${LOG_FILE}"; then
+      grep -in "error" "${LOG_FILE}"
+      log_fatal "errors found in pgrwl logs"
+    else
+      log_info "no errors found in pgrwl logs"
+    fi
+  fi
+
+  log_info "searching for errors in pg logs"
+  if [[ -f "/var/log/postgresql/pg.log" ]]; then
+    grep -i "err" "/var/log/postgresql/pg.log" || log_info "no errors found in pg logs"
+  fi
+}
+
+# some errors are expected (for instance, in toxyproxy tests)
 x_search_errors_in_logs() {
   log_info "searching for errors in pgrwl logs"
   if [[ -f "${LOG_FILE}" ]]; then
@@ -170,6 +194,8 @@ x_print_ok() {
 }
 
 x_run_post_restore_check() {
+  log_info "run post-restore checks for test: ${TEST_NAME}"
+
   psql -X -P pager=off -v ON_ERROR_STOP=1 \
     -f /var/lib/postgresql/scripts/pg/post_restore_check.sql \
     postgres

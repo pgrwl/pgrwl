@@ -23,7 +23,7 @@ set -euo pipefail
 #   xpg_recreate_slots
 #   x_start_receiver
 #   x_stop_receiver
-#   x_search_errors_in_logs
+#   x_search_errors_in_logs_or_fatal
 #
 ###############################################################################
 
@@ -295,7 +295,7 @@ x_test_stream_api_basebackup() {
   curl -fsS "${BASEBACKUP_STATUS_URL}" | tee "/tmp/basebackup-status-final.json"
 
   echo_delim "check logs"
-  x_search_errors_in_logs
+  x_search_errors_in_logs_or_fatal
   x_print_ok
 }
 
