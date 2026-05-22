@@ -43,6 +43,10 @@ func (s *svc) log() *slog.Logger {
 }
 
 func (s *svc) GetWalFile(ctx context.Context, filename string) (io.ReadCloser, error) {
+	if err := validateWALDownloadName(filename); err != nil {
+		return nil, err
+	}
+
 	// 1) Fast-path: check that file exists locally
 	// 2) Check *.partial file locally
 	// 3) Fetch from storage (if it's not nil)
@@ -75,4 +79,12 @@ func (s *svc) GetWalFile(ctx context.Context, filename string) (io.ReadCloser, e
 	}
 
 	return nil, fmt.Errorf("cannot fetch file: %s", filename)
+}
+
+func validateWALDownloadName(name string) error {
+	if name != filepath.Base(name) {
+		return fmt.Errorf("invalid wal filename")
+	}
+	// TODO: check is wal-file-name, or history-file-name
+	return nil
 }

@@ -40,6 +40,11 @@ func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupd
 		loggr.Error("cannot establish connection", slog.Any("err", err))
 		return nil, err
 	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = conn.Close(closeCtx)
+	}()
 
 	// init module
 	baseBackup, err := NewBaseBackup(conn, stor, ts)
@@ -53,7 +58,7 @@ func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupd
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			loggr.Warn("backup was not created: context canceled")
-			return nil, nil
+			return nil, err
 		}
 		loggr.Error("cannot create basebackup", slog.Any("err", err))
 		return nil, err
