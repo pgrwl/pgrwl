@@ -80,7 +80,7 @@ func (c *Handler) StopReceiverHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *Handler) StartReceiverHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Handler) StartReceiverHandler(w http.ResponseWriter, _ *http.Request) {
 	if err := c.Service.StartReceiver(); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return

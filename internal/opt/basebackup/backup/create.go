@@ -20,10 +20,6 @@ type CreateBaseBackupOpts struct {
 func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupdto.Result, error) {
 	var err error
 
-	// // setup context
-	// ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	// defer cancel()
-
 	// timestamp
 	ts := time.Now().UTC().Format("20060102150405")
 	loggr := slog.With(slog.String("component", "basebackup"), slog.String("id", ts))
