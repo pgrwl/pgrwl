@@ -39,7 +39,7 @@ x_backup_restore() {
 
   # run wal-receivers
   echo_delim "running wal-receivers"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
   x_start_pg_receivewal
 
   # create tablespaces
@@ -114,7 +114,7 @@ EOSQL
 
   # stop cluster, cleanup data
   echo_delim "teardown"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   x_stop_pg_receivewal
   xpg_teardown
 

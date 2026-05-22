@@ -62,7 +62,7 @@ x_backup_restore() {
 
   # run wal-receivers
   echo_delim "running wal-receivers"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
 
   # make a basebackup before doing anything
   echo_delim "creating basebackup"
@@ -85,7 +85,7 @@ x_backup_restore() {
 
   # stop cluster, cleanup data
   echo_delim "teardown"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   xpg_teardown
 
   # restore from backup

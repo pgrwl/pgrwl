@@ -94,7 +94,7 @@ x_backup_restore() {
   xpg_recreate_slots
 
   echo_delim "running wal-receivers"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
   x_start_pg_receivewal
 
   echo_delim "wait both receivers streaming"
@@ -127,7 +127,7 @@ x_backup_restore() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   echo_delim "teardown"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   x_stop_pg_receivewal
   xpg_teardown
 

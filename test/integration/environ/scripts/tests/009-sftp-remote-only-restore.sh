@@ -61,7 +61,7 @@ x_backup_restore() {
   xpg_start
 
   echo_delim "start receiver"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
 
   echo_delim "create base backup"
   pgrwl backup -c "/tmp/config.json"
@@ -84,7 +84,7 @@ x_backup_restore() {
   sleep 5   # simple and readable > perfect
 
   echo_delim "teardown source"
-  x_stop_receiver
+  x_stop_receiver_rest_api
   xpg_teardown
 
   echo_delim "wipe local WAL (important!)"

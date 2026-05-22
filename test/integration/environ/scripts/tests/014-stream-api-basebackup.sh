@@ -21,8 +21,8 @@ set -euo pipefail
 #   xpg_rebuild
 #   xpg_start
 #   xpg_recreate_slots
-#   x_start_receiver
-#   x_stop_receiver
+#   x_run_receiver_daemon
+#   x_stop_receiver_rest_api
 #   x_search_errors_in_logs_or_fatal
 #
 ###############################################################################
@@ -245,7 +245,7 @@ x_test_stream_api_basebackup() {
   pgbench -i -s "${API_TEST_PGBENCH_SCALE}" postgres
 
   echo_delim "start receiver / stream daemon"
-  x_start_receiver "/tmp/config.json"
+  x_run_receiver_daemon "/tmp/config.json"
   x_wait_api_ready
 
   echo_delim "start background inserts"

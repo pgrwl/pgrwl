@@ -84,7 +84,7 @@ x_remake_dirs() {
 }
 
 # start the receiver in background and store its PID
-x_start_receiver() {
+x_run_receiver_daemon() {
   local cfg=$1
   log_info "starting receiver with $cfg"
 
@@ -98,15 +98,12 @@ x_start_receiver() {
   RECEIVER_PID=$!
 }
 
-x_stop_receiver() {
-  log_info "sending: /api/v1/receiver/stop"
-  curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
-    
-  # if [[ -n "${RECEIVER_PID:-}" ]]; then
-  #   log_info "stopping receiver (PID $RECEIVER_PID)"
-  #   kill -TERM "$RECEIVER_PID" 2>/dev/null || true
-  #   wait "$RECEIVER_PID" 2>/dev/null || true
-  # fi
+x_kill_receiver_daemon() {
+  if [[ -n "${RECEIVER_PID:-}" ]]; then
+    log_info "stopping receiver (PID $RECEIVER_PID)"
+    kill -TERM "$RECEIVER_PID" 2>/dev/null || true
+    wait "$RECEIVER_PID" 2>/dev/null || true
+  fi
 }
 
 x_stop_receiver_rest_api() {
