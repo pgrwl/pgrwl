@@ -25,7 +25,7 @@ xpg_dirs() {
     chmod 0750 "${PGDATA}"
     chown -R postgres:postgres "/var/lib/postgresql"
     chown -R postgres:postgres "/etc/postgresql"
-    
+
     mkdir -p /var/log/postgresql
     chown -R postgres:postgres /var/log/postgresql
 }
@@ -36,13 +36,16 @@ xpg_teardown() {
 }
 
 xpg_start() {
-    "${PG_BINDIR}/pg_ctl" \
-    -D ${PGDATA} \
-    -o "-c config_file=${PG_CFG}" \
-    -o "-c hba_file=${PG_HBA}" \
-    -l /var/log/postgresql/pg.log \
-    start
+    "${PG_BINDIR}/pg_ctl" start \
+    -D "${PGDATA}" \
+    -o "-c config_file=${PG_CFG} -c hba_file=${PG_HBA}" \
+    -l /var/log/postgresql/pg.log
+
     xpg_wait_is_ready
+}
+
+xpg_stop() {
+    "${PG_BINDIR}/pg_ctl" stop -D "${PGDATA}" -m immediate
 }
 
 xpg_rebuild() {
@@ -81,7 +84,7 @@ xpg_recreate_slots() {
   CHECKPOINT;
   SELECT pg_switch_wal();
 EOSQL
-    
+
 }
 
 xpg_create_slots() {
@@ -94,7 +97,7 @@ xpg_create_slots() {
   CHECKPOINT;
   SELECT pg_switch_wal();
 EOSQL
-    
+
 }
 
 xpg_checkpoint_switch_wal() {
@@ -103,40 +106,40 @@ xpg_checkpoint_switch_wal() {
   CHECKPOINT;
   SELECT pg_switch_wal();
 EOSQL
-    
+
 }
 
 xpg_wait_for_slot() {
     local slot="$1"
-    
+
     # target LSN = current WAL write position
     local target_lsn
     target_lsn=$(psql -At -U postgres -c "SELECT pg_current_wal_lsn()")
-    
+
     echo_delim "waiting for slot ${slot} to reach ${target_lsn}"
-    
+
     # tiny polling loop; tune timeout (if needed)
     for i in {1..120}; do
         local confirmed
         confirmed=$(psql -At -U postgres -c "SELECT restart_lsn FROM pg_replication_slots WHERE slot_name = '${slot}'")
-        
+
         # slot might not exist yet -> treat as 0/0
         if [[ -z "$confirmed" ]]; then
             confirmed="0/0"
         fi
-        
+
         local ok
         ok=$(psql -At -U postgres -c \
         "SELECT '${confirmed}' >= '${target_lsn}'")
-        
+
         if [[ "$ok" = "t" ]]; then
             echo "slot ${slot} caught up at ${confirmed}"
             return 0
         fi
-        
+
         sleep 0.25
     done
-    
+
     echo "slot ${slot} failed to catch up in time"
     return 1
 }
@@ -148,7 +151,7 @@ local replication all     trust
 host  all         all all trust
 host  replication all all trust
 EOF
-    
+
   cat <<'EOF' >"${PG_CFG}"
 listen_addresses         = '*'
 logging_collector        = on
