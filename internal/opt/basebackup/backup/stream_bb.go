@@ -169,7 +169,7 @@ func (bb *baseBackup) streamBaseBackup(ctx context.Context) (*backupdto.Result, 
 				remotePath = strings.TrimPrefix(filename, "./")
 				curFile = NewStreamingFile(ctx, log, bb.storage, remotePath)
 
-				log.Info("streaming file",
+				log.Info("streaming backup file",
 					slog.String("path", remotePath),
 					slog.String("tablespace-path", tsPath),
 				)
@@ -181,7 +181,7 @@ func (bb *baseBackup) streamBaseBackup(ctx context.Context) (*backupdto.Result, 
 
 				if inManifest {
 					mData := m.Data[1:]
-					log.Info("writing manifest data", slog.Int("len", len(mData)))
+					log.Debug("writing manifest data", slog.Int("len", len(mData)))
 					if _, err := manifestBuf.Write(mData); err != nil {
 						return nil, fmt.Errorf("write manifest buffer: %w", err)
 					}
@@ -221,7 +221,7 @@ func (bb *baseBackup) streamBaseBackup(ctx context.Context) (*backupdto.Result, 
 					//nolint:gosec
 					bytesDone := int64(binary.BigEndian.Uint64(m.Data[1:9]))
 					elapsed := time.Since(startTime)
-					log.Info("progress",
+					log.Info("basebackup progress",
 						slog.String("file", remotePath),
 						slog.Int64("bytes_done", bytesDone),
 						slog.String("bytes_done_iec", fsx.ByteCountIEC(bytesDone)),

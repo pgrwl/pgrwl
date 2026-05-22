@@ -81,7 +81,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	}
 
 	// print options
-	loggr.LogAttrs(ctx, slog.LevelInfo, "opts", slog.Any("opts", opts))
+	loggr.LogAttrs(ctx, slog.LevelInfo, "receiver opts", slog.Any("opts", opts))
 
 	//////////////////////////////////////////////////////////////////////
 	// Init WAL-receiver first.
@@ -292,7 +292,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		cancel()
 	}
 
-	loggr.Info("shutting down", slog.String("note", "waiting for goroutines..."))
+	loggr.Info("shutting down components",
+		slog.String("note", "waiting for goroutines..."),
+	)
 
 	done := make(chan struct{})
 	go func() {
@@ -366,14 +368,17 @@ func initWalStorage(
 	opts *ReceiveModeOpts,
 	walSegSzUint64 uint64,
 ) (*st.VariadicStorage, error) {
-	loggr.Info("init storage")
+	loggr.Info("init wal storage")
 
 	walSegSz, err := conv.Uint64ToInt64(walSegSzUint64)
 	if err != nil {
 		return nil, fmt.Errorf("convert wal segment size: %w", err)
 	}
 
-	loggr.Info("multipart chunk part (walSegSz)", slog.Int64("sz", walSegSz))
+	loggr.Info("set multipart chunk part size",
+		slog.String("storage", "wal-stor"),
+		slog.Int64("sz", walSegSz),
+	)
 
 	stor, err := api.SetupStorage(&api.SetupStorageOpts{
 		BaseDir:         opts.ReceiveDirectory,

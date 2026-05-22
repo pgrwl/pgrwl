@@ -87,7 +87,7 @@ func (pgrw *pgReceiveWal) Run(ctx context.Context) error {
 			return fmt.Errorf("disconnected")
 		}
 
-		pgrw.log().Info("disconnected; waiting 5 seconds to try again")
+		pgrw.log().Info("disconnected", slog.String("note", "waiting 5 seconds to try again"))
 		time.Sleep(5 * time.Second)
 	}
 }

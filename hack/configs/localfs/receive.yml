@@ -27,7 +27,7 @@ storage:
 #    pass: qwerty123
 
 backup:
-  cron: "*/5 * * * *"
+  cron: "* * * * *"
 
 retention:
   enable: true
