@@ -146,6 +146,8 @@ x_backup_restore() {
 
   # stop cluster, cleanup data
   echo_delim "teardown"
+  x_kill_receiver_daemon
+  x_run_receiver_daemon "/tmp/config-zstd.yaml"
   x_stop_receiver_rest_api
   xpg_teardown
 
