@@ -36,6 +36,7 @@ ALL_TESTS=(
   pg_011_basic_flow
   pg_012_restore_s3_toxiproxy
   pg_014_stream_api_bb
+  pg_016_restore_s3_controlled_api
 )
 
 if [[ $# -gt 0 ]]; then

@@ -54,6 +54,7 @@ x_sql() {
 
 x_backup_restore() {
   echo_delim "cleanup"
+  x_kill_proc_rmrf_tmp
   x_remake_dirs
   x_remake_config
 

@@ -144,7 +144,11 @@ func backupCreateCmd() *cliv3.Command {
 				return err
 			}
 
-			_, err = backup.CreateBaseBackup(&backup.CreateBaseBackupOpts{Directory: cfg.Main.Directory})
+			_, err = backup.CreateBaseBackup(context.Background(),
+				&backup.CreateBaseBackupOpts{
+					Directory: cfg.Main.Directory,
+				},
+			)
 			return err
 		},
 	}
