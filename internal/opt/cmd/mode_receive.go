@@ -120,7 +120,7 @@ func (r *receiverController) Start() error {
 		return fmt.Errorf("init wal receiver: %w", err)
 	}
 
-	newRctx, newCancel := context.WithCancel(r.outerCtx)
+	newRctx, newCancel := context.WithCancel(r.outerCtx) //nolint:gosec
 
 	r.mu.Lock()
 	r.pgrw = newPgrw
