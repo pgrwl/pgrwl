@@ -44,7 +44,6 @@ export PGUSER="postgres"
 export PGPASSWORD="postgres"
 
 PGRWL_RECEIVE_PID=""
-PGRWL_SERVE_PID=""
 
 ###############################################################################
 # Small helper functions
@@ -94,15 +93,6 @@ stop_pgrwl_receive() {
     kill "$PGRWL_RECEIVE_PID" >/dev/null 2>&1 || true
     wait "$PGRWL_RECEIVE_PID" >/dev/null 2>&1 || true
     PGRWL_RECEIVE_PID=""
-  fi
-}
-
-stop_pgrwl_serve() {
-  if [[ -n "${PGRWL_SERVE_PID:-}" ]]; then
-    log "Stopping pgrwl restore server..."
-    kill "$PGRWL_SERVE_PID" >/dev/null 2>&1 || true
-    wait "$PGRWL_SERVE_PID" >/dev/null 2>&1 || true
-    PGRWL_SERVE_PID=""
   fi
 }
 
@@ -198,7 +188,7 @@ cat >"$PGRWL_CONFIG" <<EOF
 EOF
 
 log "Starting pgrwl receiver..."
-pgrwl daemon -m receive -c "$PGRWL_CONFIG" >"/tmp/pgrwl-basic/pgrwl-receive.log" 2>&1 &
+pgrwl daemon -c "$PGRWL_CONFIG" >"/tmp/pgrwl-basic/pgrwl-receive.log" 2>&1 &
 PGRWL_RECEIVE_PID=$!
 
 # Give the receiver a moment to connect and begin streaming.
@@ -275,11 +265,10 @@ touch "$PGDATA/recovery.signal"
 ###############################################################################
 
 log "Starting pgrwl restore server..."
-pgrwl daemon -m serve -c "$PGRWL_CONFIG" >"/tmp/pgrwl-basic/pgrwl-serve.log" 2>&1 &
-PGRWL_SERVE_PID=$!
+curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
 
 cat >>"$PGDATA/postgresql.conf" <<EOF
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
 ###############################################################################

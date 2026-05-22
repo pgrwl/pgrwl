@@ -159,12 +159,11 @@ x_backup_restore() {
   # fix configs
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
-  # run serve-mode
   echo_delim "running wal fetcher"
-  nohup /usr/local/bin/pgrwl daemon -c "/tmp/config-gzip-aes.yaml" -m serve >>"$LOG_FILE" 2>&1 &
+  curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
 
   # run restored cluster
   echo_delim "running cluster"

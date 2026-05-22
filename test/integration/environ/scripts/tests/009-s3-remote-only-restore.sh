@@ -101,11 +101,11 @@ x_backup_restore() {
 
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
-  echo_delim "start serve mode"
-  x_start_serving "/tmp/config.json"
+  echo_delim "serving files"
+  x_stop_receiver_rest_api
 
   echo_delim "start restored cluster"
   xpg_start

@@ -91,7 +91,7 @@ x_start_receiver() {
   # Run the receiver in background.
   #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
   #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
-  /usr/local/bin/pgrwl daemon -c "${cfg}" -m receive \
+  /usr/local/bin/pgrwl daemon -c "${cfg}" \
     > >(tee -a "$LOG_FILE") \
     2> >(tee -a "$LOG_FILE" >&2) &
 
@@ -112,7 +112,7 @@ x_stop_receiver_rest_api() {
 }
 
 x_start_receiver_rest_api() {
-  log_info "sending: /api/v1/receiver/start"
+  log_info "sending: /api/v1/receiver/stop"
   curl -X POST http://127.0.0.1:7070/api/v1/receiver/start
 }
 
@@ -146,25 +146,6 @@ x_generate_wal() {
     psql -U postgres -c 'DROP TABLE IF EXISTS xxx; SELECT pg_switch_wal(); CREATE TABLE IF NOT EXISTS xxx(id serial);' \
       >/dev/null 2>&1
   done
-}
-
-x_start_serving() {
-  local cfg=$1
-  log_info "starting wal-serving with $cfg"
-
-  # Run the 'serve' mode in background.
-  #   * stdout  -> tee -> log file (append) -> /dev/null (discard)
-  #   * stderr  -> tee -> log file (append) -> original stderr (so it appears on console)
-  /usr/local/bin/pgrwl daemon -c "${cfg}" -m serve \
-    > >(tee -a "$LOG_FILE") \
-    2> >(tee -a "$LOG_FILE" >&2) &
-
-  SERVE_PID=$!
-
-  # Wait for the HTTP server to be ready before returning.
-  # PostgreSQL's restore_command connects to this port immediately on startup;
-  # without this wait there is a race where the command fails and recovery aborts.
-  x_wait_http_ok "http://127.0.0.1:7070/healthz" 30
 }
 
 x_search_errors_in_logs_or_fatal() {

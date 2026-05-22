@@ -10,19 +10,19 @@ import (
 	"github.com/pgrwl/pgrwl/internal/core/logger"
 )
 
-func LoadConfig(configPath, mode string) (*config.Config, error) {
+func LoadConfig(configPath string) (*config.Config, error) {
 	// 1) if -c flag is set -> must read config from file
 	// 2) if $PGRWL_CONFIG_PATH is set -> must read config from file
 	// 3) read config with go-envconfig otherwise
 	var cfg *config.Config
 	var err error
 	if configPath != "" {
-		cfg, err = config.FromFile(configPath, mode)
+		cfg, err = config.FromFile(configPath)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		cfg, err = config.FromEnvs(mode)
+		cfg, err = config.FromEnvs()
 		if err != nil {
 			return nil, err
 		}

@@ -18,18 +18,6 @@ import (
 
 // Constants for application modes.
 const (
-	// ModeReceive represents the WAL receiving mode.
-	ModeReceive = "receive"
-
-	// ModeServe represents the HTTP API serving mode.
-	ModeServe = "serve"
-
-	// ModeBackupCMD used in pgrwl backup CLI command.
-	ModeBackupCMD = "backup-cmd"
-
-	// ModeRestoreCMD used in pgrwl restore CLI command.
-	ModeRestoreCMD = "restore"
-
 	// StorageNameS3 is the identifier for the S3 storage backend.
 	StorageNameS3 = "s3"
 
@@ -68,15 +56,6 @@ var (
 	// Verbose set to true when log.level == 'trace'
 	// To prevent log-attributes evaluation, and fully eliminate function calls for non-trace levels
 	Verbose bool
-
-	modes = []string{
-		// CMD
-		ModeBackupCMD,
-		ModeRestoreCMD,
-		// daemons
-		ModeReceive,
-		ModeServe,
-	}
 )
 
 // Config is the root configuration for the WAL receiver application.
@@ -310,7 +289,7 @@ func Cfg() (*Config, error) {
 	return config, nil
 }
 
-func FromFile(path, mode string) (*Config, error) {
+func FromFile(path string) (*Config, error) {
 	once.Do(func() {
 		var cfg *Config
 
@@ -319,7 +298,7 @@ func FromFile(path, mode string) (*Config, error) {
 			return
 		}
 
-		cfgErr = validate(cfg, mode)
+		cfgErr = validate(cfg)
 		if cfgErr != nil {
 			return
 		}
@@ -334,7 +313,7 @@ func FromFile(path, mode string) (*Config, error) {
 	return config, nil
 }
 
-func FromEnvs(mode string) (*Config, error) {
+func FromEnvs() (*Config, error) {
 	once.Do(func() {
 		config = new(Config)
 
@@ -343,7 +322,7 @@ func FromEnvs(mode string) (*Config, error) {
 			return
 		}
 
-		cfgErr = validate(config, mode)
+		cfgErr = validate(config)
 		if cfgErr != nil {
 			return
 		}
@@ -383,16 +362,11 @@ func mustLoadCfg(path string) (*Config, error) {
 }
 
 // validate checks that all required fields in the config are set appropriately.
-func validate(c *Config, mode string) error {
+func validate(c *Config) error {
 	var errs []string
 
-	if strings.TrimSpace(mode) == "" {
-		return fmt.Errorf("config.validate: mode is required")
-	}
-
-	errs = checkMode(mode, errs)
 	errs = checkMainConfig(c, errs)
-	errs = checkReceiverConfig(c, mode, errs)
+	errs = checkReceiverConfig(c, errs)
 	errs = checkRetentionConfig(c, errs)
 	errs = checkLogConfig(c, errs)
 	errs = checkStorageConfig(c, errs)
@@ -407,20 +381,6 @@ func validate(c *Config, mode string) error {
 
 // checks
 
-func checkMode(mode string, errs []string) []string {
-	found := false
-	for _, m := range modes {
-		if strings.EqualFold(m, mode) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		errs = append(errs, fmt.Sprintf("invalid mode: %q (must be %q)", mode, strings.Join(modes, "|")))
-	}
-	return errs
-}
-
 func checkMainConfig(c *Config, errs []string) []string {
 	// Validate main section
 	if c.Main.ListenPort == 0 {
@@ -432,26 +392,23 @@ func checkMainConfig(c *Config, errs []string) []string {
 	return errs
 }
 
-func checkReceiverConfig(c *Config, mode string, errs []string) []string {
-	// Validate receiver (only in receive mode)
-	if mode == ModeReceive {
-		if strings.TrimSpace(c.Receiver.Slot) == "" {
-			errs = append(errs, "receiver.slot is required in receive mode")
+func checkReceiverConfig(c *Config, errs []string) []string {
+	if strings.TrimSpace(c.Receiver.Slot) == "" {
+		errs = append(errs, "receiver.slot is required in receive mode")
+	}
+	// uploader conf is required:
+	// * when external storage is used
+	// * when local storage used with compression || encryption configured
+	if c.IsExternalStor() || c.Storage.Compression.Algo != "" || c.Storage.Encryption.Algo != "" {
+		// uploader
+		syncIntervalUploader := c.Receiver.Uploader.SyncInterval
+		if duration, err := time.ParseDuration(syncIntervalUploader); err != nil {
+			errs = append(errs, fmt.Sprintf("receiver.uploader.sync_interval cannot parse: %s, %v", syncIntervalUploader, err))
+		} else {
+			c.Receiver.Uploader.SyncIntervalParsed = duration
 		}
-		// uploader conf is required:
-		// * when external storage is used
-		// * when local storage used with compression || encryption configured
-		if c.IsExternalStor() || c.Storage.Compression.Algo != "" || c.Storage.Encryption.Algo != "" {
-			// uploader
-			syncIntervalUploader := c.Receiver.Uploader.SyncInterval
-			if duration, err := time.ParseDuration(syncIntervalUploader); err != nil {
-				errs = append(errs, fmt.Sprintf("receiver.uploader.sync_interval cannot parse: %s, %v", syncIntervalUploader, err))
-			} else {
-				c.Receiver.Uploader.SyncIntervalParsed = duration
-			}
-			if c.Receiver.Uploader.MaxConcurrency <= 0 {
-				errs = append(errs, "receiver.uploader.max_concurrency must be > 0 if uploader is configured")
-			}
+		if c.Receiver.Uploader.MaxConcurrency <= 0 {
+			errs = append(errs, "receiver.uploader.max_concurrency must be > 0 if uploader is configured")
 		}
 	}
 	return errs

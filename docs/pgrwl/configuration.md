@@ -3,14 +3,14 @@
 The configuration file is in JSON or YML format (\*.json is preferred).
 It supports environment variable placeholders like `${PGRWL_SECRET_ACCESS_KEY}`.
 
-You may either use `pgrwl daemon -c config.yml -m receive` or provide the corresponding environment variables and run
+You may either use `pgrwl daemon -c config.yml` or provide the corresponding environment variables and run
 `pgrwl daemon`.
 
 ## YAML/JSON config file structure
 
 ```
 ---
-main:                                    # Required for both modes: receive/serve
+main:                                    # Required
   listen_port: 7070                      # HTTP server port (used for management)
   directory: "/var/lib/pgwal"            # Base directory for storing WAL files
 

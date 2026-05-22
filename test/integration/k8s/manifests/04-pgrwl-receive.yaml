@@ -171,8 +171,6 @@ spec:
           imagePullPolicy: Always
           args: ["daemon"]
           env:
-            - name: PGRWL_DAEMON_MODE
-              value: "receive"
             - name: PGRWL_CONFIG_PATH
               value: "/tmp/configs/config-s3.yml"
           ports:

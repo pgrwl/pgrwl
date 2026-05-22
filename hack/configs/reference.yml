@@ -1,5 +1,5 @@
 ---
-main:                                    # Required for both modes: receive/serve
+main:                                    # Required
   listen_port: 7070                      # HTTP server port (used for management)
   directory: "/var/lib/pgwal"            # Base directory for storing WAL files
 

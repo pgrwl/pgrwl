@@ -116,7 +116,7 @@ services:
       PGPASSWORD: postgres
     ports:
       - "7070:7070"
-    command: daemon -c /etc/pgrwl-config.yaml -m receive
+    command: daemon -c /etc/pgrwl-config.yaml
     configs:
       - source: pgrwl-config.yaml
         target: /etc/pgrwl-config.yaml

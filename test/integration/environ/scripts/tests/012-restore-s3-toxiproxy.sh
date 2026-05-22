@@ -95,11 +95,11 @@ x_backup_restore_with_toxiproxy() {
 
   xpg_config
   cat <<EOF >>"${PG_CFG}"
-restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
+restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
 EOF
 
   echo_delim "start wal serving"
-  x_start_serving "/tmp/config.json"
+  x_stop_receiver_rest_api
 
   >/var/log/postgresql/pg.log
 

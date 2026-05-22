@@ -6,9 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/pgrwl/pgrwl/config"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backup"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/restore"
 	"github.com/pgrwl/pgrwl/internal/opt/cmd"
@@ -46,7 +44,6 @@ func newCliApp() *cliv3.Command {
 
 const (
 	configKey = "config"
-	modeKey   = "mode"
 )
 
 var (
@@ -56,70 +53,34 @@ var (
 		Aliases: []string{"c"},
 		Sources: cliv3.EnvVars("PGRWL_CONFIG_PATH"),
 	}
-
-	modeFlag = &cliv3.StringFlag{
-		Name:     modeKey,
-		Usage:    "Daemon mode: receive/serve",
-		Aliases:  []string{"m"},
-		Required: true,
-		Sources:  cliv3.EnvVars("PGRWL_DAEMON_MODE"),
-	}
 )
 
 func daemonCmd() *cliv3.Command {
 	return &cliv3.Command{
 		Name:  "daemon",
-		Usage: "Running in a daemon mode: receive/serve",
+		Usage: "Running in a daemon mode",
 		Flags: []cliv3.Flag{
 			configFlag,
-			modeFlag,
 		},
 		Action: func(_ context.Context, c *cliv3.Command) error {
 			var err error
 
-			mode := c.String(modeKey)
-			if strings.TrimSpace(mode) == "" {
-				return fmt.Errorf("daemon-cmd: empty mode")
-			}
-
-			isDaemonMode := mode == config.ModeReceive || mode == config.ModeServe
-			if !isDaemonMode {
-				return fmt.Errorf("daemon-cmd: unknown mode '%s'", mode)
-			}
-
-			cfg, err := cmd.LoadConfig(c.String(configKey), mode)
+			cfg, err := cmd.LoadConfig(c.String(configKey))
 			if err != nil {
 				return err
 			}
 
-			if mode == config.ModeReceive {
-				err = cmd.CheckPgEnvsAreSet()
-				if err != nil {
-					return err
-				}
-
-				err = cmd.RunReceiveMode(&cmd.ReceiveModeOpts{
-					ReceiveDirectory: filepath.ToSlash(cfg.Main.Directory),
-					ListenPort:       cfg.Main.ListenPort,
-					Slot:             cfg.Receiver.Slot,
-					NoLoop:           cfg.Receiver.NoLoop,
-				})
-				if err != nil {
-					return err
-				}
+			err = cmd.CheckPgEnvsAreSet()
+			if err != nil {
+				return err
 			}
 
-			if mode == config.ModeServe {
-				err := cmd.RunServeMode(&cmd.ServeModeOpts{
-					Directory:  filepath.ToSlash(cfg.Main.Directory),
-					ListenPort: cfg.Main.ListenPort,
-				})
-				if err != nil {
-					return err
-				}
-			}
-
-			return nil
+			return cmd.RunReceiveMode(&cmd.ReceiveModeOpts{
+				ReceiveDirectory: filepath.ToSlash(cfg.Main.Directory),
+				ListenPort:       cfg.Main.ListenPort,
+				Slot:             cfg.Receiver.Slot,
+				NoLoop:           cfg.Receiver.NoLoop,
+			})
 		},
 	}
 }
@@ -139,7 +100,7 @@ func backupCreateCmd() *cliv3.Command {
 				return err
 			}
 
-			cfg, err := cmd.LoadConfig(c.String(configKey), config.ModeBackupCMD)
+			cfg, err := cmd.LoadConfig(c.String(configKey))
 			if err != nil {
 				return err
 			}
@@ -171,7 +132,7 @@ func backupRestoreCmd() *cliv3.Command {
 			},
 		},
 		Action: func(_ context.Context, c *cliv3.Command) error {
-			cfg, err := cmd.LoadConfig(c.String(configKey), config.ModeRestoreCMD)
+			cfg, err := cmd.LoadConfig(c.String(configKey))
 			if err != nil {
 				return err
 			}
@@ -192,12 +153,12 @@ func restoreCommandCmd() *cliv3.Command {
 				Implements PostgreSQL restore_command.
 
 				Example usage in postgresql.conf:
-				restore_command = 'pgrwl restore-command --serve-addr=k8s-worker5:30266 %f %p'
+				restore_command = 'pgrwl restore-command --addr=k8s-worker5:30266 %f %p'
 				`),
 
 		Flags: []cliv3.Flag{
 			&cliv3.StringFlag{
-				Name:     "serve-addr",
+				Name:     "addr",
 				Required: true,
 				Usage:    "The address of pgrwl running in a serve mode",
 			},
@@ -215,7 +176,7 @@ func restoreCommandCmd() *cliv3.Command {
 				walFile,
 				destPath,
 				&cmd.RestoreCommandOpts{
-					Addr: c.String("serve-addr"),
+					Addr: c.String("addr"),
 				},
 			)
 		},
@@ -228,15 +189,10 @@ func validateCmd() *cliv3.Command {
 		Usage: "Validate the config file without running the application",
 		Flags: []cliv3.Flag{
 			configFlag,
-			modeFlag,
 		},
 		Action: func(_ context.Context, c *cliv3.Command) error {
-			mode := c.String(modeKey)
-			if mode == "" {
-				return fmt.Errorf("required flag 'mode' is empty")
-			}
 			configPath := c.String(configKey)
-			_, err := cmd.LoadConfig(configPath, mode)
+			_, err := cmd.LoadConfig(configPath)
 			if err != nil {
 				fmt.Printf("configuration error: %v\n", err)
 				return err
