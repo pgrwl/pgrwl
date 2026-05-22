@@ -25,6 +25,7 @@ type PgReceiveWal interface {
 	Status() *StreamStatus
 	CurrentOpenWALFileName() string
 	WalSegSz() uint64
+	Close(ctx context.Context) error
 }
 
 type pgReceiveWal struct {
@@ -49,35 +50,16 @@ type PgReceiveWalOpts struct {
 
 var ErrNoWalEntries = fmt.Errorf("no valid WAL segments found")
 
-func NewPgReceiver(ctx context.Context, opts *PgReceiveWalOpts) (PgReceiveWal, error) {
-	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", opts.Slot)
-	conn, err := pgconn.Connect(ctx, connStrRepl)
-	if err != nil {
-		slog.Error("cannot establish connection",
-			slog.String("component", "pgreceivewal"),
-			slog.Any("err", err),
-		)
-		return nil, err
-	}
-	startupInfo, err := GetStartupInfo(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	// ensure dirs
-	if err := os.MkdirAll(opts.ReceiveDirectory, 0o750); err != nil {
-		return nil, err
-	}
-
+func NewPgReceiver(_ context.Context, streamingConn *StreamingConn, opts *PgReceiveWalOpts) PgReceiveWal {
 	return &pgReceiveWal{
 		l:                slog.With(slog.String("component", "pgreceivewal")),
 		receiveDirectory: opts.ReceiveDirectory,
-		walSegSz:         startupInfo.WalSegSz,
-		conn:             conn,
-		connStrRepl:      connStrRepl,
+		walSegSz:         streamingConn.StartupInfo.WalSegSz,
+		conn:             streamingConn.Conn,
+		connStrRepl:      streamingConn.ConnStrRepl,
 		slotName:         opts.Slot,
 		noLoop:           opts.NoLoop,
-	}, nil
+	}
 }
 
 func (pgrw *pgReceiveWal) Run(ctx context.Context) error {
@@ -341,4 +323,13 @@ func (pgrw *pgReceiveWal) findStreamingStart() (pglogrepl.LSN, uint32, error) {
 
 func (pgrw *pgReceiveWal) WalSegSz() uint64 {
 	return pgrw.walSegSz
+}
+
+func (pgrw *pgReceiveWal) Close(ctx context.Context) error {
+	if pgrw.conn == nil {
+		return nil
+	}
+	err := pgrw.conn.Close(ctx)
+	pgrw.conn = nil
+	return err
 }

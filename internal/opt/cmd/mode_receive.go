@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"sync"
@@ -36,6 +37,7 @@ type ReceiveModeOpts struct {
 	ListenPort       int
 }
 
+//nolint:gocyclo
 func RunReceiveMode(opts *ReceiveModeOpts) error {
 	cfg, err := config.Cfg()
 	if err != nil {
@@ -87,15 +89,49 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// This remains the core component. If it cannot be initialized, receive
 	// mode must not start.
 
-	pgrw, err := initPgrw(ctx, opts)
+	// init replication connection
+
+	streamingConn, err := xlog.InitStreamingConn(ctx, opts.Slot)
+	if err != nil {
+		return fmt.Errorf("init streaming conn: %w", err)
+	}
+	if err := checkStreamingConn(streamingConn); err != nil {
+		return err
+	}
+	defer func() {
+		loggr.Info("closing connection")
+		closeCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		err := streamingConn.Close(closeCtx)
+		if err != nil {
+			loggr.Warn("closing conn", slog.Any("err", err))
+		}
+	}()
+
+	// init pgrw
+
+	pgrw, err := initPgrw(ctx, streamingConn, opts)
 	if err != nil {
 		return fmt.Errorf("init wal receiver: %w", err)
 	}
+	defer func() {
+		// NOTE: during reconnect attempts pgrw may hold completely different connection
+		// than the first one (which was passed during initialization: streamingConn).
+		loggr.Info("closing pgrw connection")
+		closeCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		err := pgrw.Close(closeCtx)
+		if err != nil {
+			loggr.Warn("closing pgrw conn", slog.Any("err", err))
+		}
+	}()
 
 	//////////////////////////////////////////////////////////////////////
 	// Init receive/archive dependencies before starting goroutines.
 
-	walStor, err := initWalStorage(loggr, opts, pgrw)
+	walSegSz := streamingConn.StartupInfo.WalSegSz
+
+	walStor, err := initWalStorage(loggr, opts, walSegSz)
 	if err != nil {
 		return fmt.Errorf("init wal storage: %w", err)
 	}
@@ -107,7 +143,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 	basebackupSupervisor, err := backupsv.NewBaseBackupSupervisor(&backupsv.BackupSupervisorOpts{
 		Directory:      opts.ReceiveDirectory,
-		WalSegSz:       pgrw.WalSegSz(),
+		WalSegSz:       walSegSz,
 		BasebackupStor: basebackupStor,
 		WalStor:        walStor,
 		Cfg:            cfg,
@@ -322,27 +358,39 @@ func initMetrics(ctx context.Context, cfg *config.Config, loggr *slog.Logger) {
 	}
 }
 
-func initPgrw(ctx context.Context, opts *ReceiveModeOpts) (xlog.PgReceiveWal, error) {
-	pgrw, err := xlog.NewPgReceiver(ctx, &xlog.PgReceiveWalOpts{
-		ReceiveDirectory: opts.ReceiveDirectory,
-		Slot:             opts.Slot,
-		NoLoop:           opts.NoLoop,
-	})
-	if err != nil {
+func checkStreamingConn(streamingConn *xlog.StreamingConn) error {
+	// ensure required props
+	if streamingConn.StartupInfo == nil {
+		return fmt.Errorf("pgrw initialization: streamingConn.StartupInfo cannot be nil")
+	}
+	if streamingConn.StartupInfo.WalSegSz == 0 {
+		return fmt.Errorf("pgrw initialization: streamingConn.WalSegSz cannot be 0")
+	}
+	return nil
+}
+
+func initPgrw(ctx context.Context, streamingConn *xlog.StreamingConn, opts *ReceiveModeOpts) (xlog.PgReceiveWal, error) {
+	// ensure dirs
+	if err := os.MkdirAll(opts.ReceiveDirectory, 0o750); err != nil {
 		return nil, err
 	}
 
-	return pgrw, nil
+	// construct pgrw
+	return xlog.NewPgReceiver(ctx, streamingConn, &xlog.PgReceiveWalOpts{
+		ReceiveDirectory: opts.ReceiveDirectory,
+		Slot:             opts.Slot,
+		NoLoop:           opts.NoLoop,
+	}), nil
 }
 
 func initWalStorage(
 	loggr *slog.Logger,
 	opts *ReceiveModeOpts,
-	pgrw xlog.PgReceiveWal,
+	walSegSzUint64 uint64,
 ) (*st.VariadicStorage, error) {
 	loggr.Info("init storage")
 
-	walSegSz, err := conv.Uint64ToInt64(pgrw.WalSegSz())
+	walSegSz, err := conv.Uint64ToInt64(walSegSzUint64)
 	if err != nil {
 		return nil, fmt.Errorf("convert wal segment size: %w", err)
 	}

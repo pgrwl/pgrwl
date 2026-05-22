@@ -18,6 +18,7 @@ type MockPgReceiveWal struct {
 	CurrentWAL string
 	RunFunc    func(ctx context.Context) error
 	StatusFunc func() *xlog.StreamStatus
+	CloseFunc  func(ctx context.Context) error
 }
 
 var _ xlog.PgReceiveWal = &MockPgReceiveWal{}
@@ -42,6 +43,13 @@ func (m *MockPgReceiveWal) Status() *xlog.StreamStatus {
 
 func (m *MockPgReceiveWal) WalSegSz() uint64 {
 	return 16 * 1024 * 1024
+}
+
+func (m *MockPgReceiveWal) Close(ctx context.Context) error {
+	if m.CloseFunc != nil {
+		return m.CloseFunc(ctx)
+	}
+	return nil
 }
 
 func TestArchiveSupervisor_PerformUploads(t *testing.T) {
