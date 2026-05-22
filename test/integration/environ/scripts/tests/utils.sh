@@ -99,11 +99,14 @@ x_start_receiver() {
 }
 
 x_stop_receiver() {
-  if [[ -n "${RECEIVER_PID:-}" ]]; then
-    log_info "stopping receiver (PID $RECEIVER_PID)"
-    kill -TERM "$RECEIVER_PID" 2>/dev/null || true
-    wait "$RECEIVER_PID" 2>/dev/null || true
-  fi
+  log_info "sending: /api/v1/receiver/stop"
+  curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
+    
+  # if [[ -n "${RECEIVER_PID:-}" ]]; then
+  #   log_info "stopping receiver (PID $RECEIVER_PID)"
+  #   kill -TERM "$RECEIVER_PID" 2>/dev/null || true
+  #   wait "$RECEIVER_PID" 2>/dev/null || true
+  # fi
 }
 
 x_stop_receiver_rest_api() {
@@ -112,7 +115,7 @@ x_stop_receiver_rest_api() {
 }
 
 x_start_receiver_rest_api() {
-  log_info "sending: /api/v1/receiver/stop"
+  log_info "sending: /api/v1/receiver/start"
   curl -X POST http://127.0.0.1:7070/api/v1/receiver/start
 }
 

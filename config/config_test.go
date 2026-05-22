@@ -198,7 +198,6 @@ func TestValidate_Config(t *testing.T) {
 	tests := []struct {
 		name        string
 		cfg         *Config
-		mode        string
 		expectError bool
 		wantMsgs    []string // optional substring checks
 	}{
@@ -232,13 +231,11 @@ func TestValidate_Config(t *testing.T) {
 		},
 		{
 			name: "invalid mode and missing main",
-			mode: "invalid",
 			cfg: &Config{
 				Main: MainConfig{},
 			},
 			expectError: true,
 			wantMsgs: []string{
-				"invalid mode",
 				"main.listen_port is required",
 				"main.directory is required",
 			},

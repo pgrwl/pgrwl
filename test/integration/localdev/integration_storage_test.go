@@ -357,7 +357,7 @@ func TestIntegrationLocaldev_SetupStorageS3ProjectSubpaths(t *testing.T) {
 	})
 
 	configPath := writeIntegrationConfig(t, env, runPrefix)
-	_, err := config.FromFile(configPath, config.ModeReceive)
+	_, err := config.FromFile(configPath)
 	require.NoError(t, err)
 
 	projectA, err := api.SetupStorage(&api.SetupStorageOpts{
