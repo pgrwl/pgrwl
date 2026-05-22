@@ -87,21 +87,6 @@ stop_postgres() {
   fi
 }
 
-stop_pgrwl_receive() {
-  if [[ -n "${PGRWL_RECEIVE_PID:-}" ]]; then
-    log "Stopping pgrwl receiver..."
-    kill "$PGRWL_RECEIVE_PID" >/dev/null 2>&1 || true
-    wait "$PGRWL_RECEIVE_PID" >/dev/null 2>&1 || true
-    PGRWL_RECEIVE_PID=""
-  fi
-}
-
-cleanup() {
-  stop_pgrwl_receive
-  stop_pgrwl_serve
-}
-trap cleanup EXIT
-
 ###############################################################################
 # Phase 0. Start from a clean state
 ###############################################################################
@@ -242,7 +227,7 @@ sleep 3
 
 log "Stopping PostgreSQL and pgrwl receiver..."
 stop_postgres
-stop_pgrwl_receive
+curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
 
 log "Removing original PGDATA to simulate data loss..."
 rm -rf "$PGDATA"
@@ -259,13 +244,6 @@ chown -R postgres:postgres "$PGDATA"
 
 # recovery.signal tells PostgreSQL to start in archive recovery mode.
 touch "$PGDATA/recovery.signal"
-
-###############################################################################
-# Phase 9. Start pgrwl in serve mode for restore_command
-###############################################################################
-
-log "Starting pgrwl restore server..."
-curl -X POST http://127.0.0.1:7070/api/v1/receiver/stop
 
 cat >>"$PGDATA/postgresql.conf" <<EOF
 restore_command = 'pgrwl restore-command --addr=127.0.0.1:7070 %f %p'
