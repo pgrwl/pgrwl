@@ -173,7 +173,9 @@ cat >"$PGRWL_CONFIG" <<EOF
 EOF
 
 log "Starting pgrwl receiver..."
-pgrwl daemon -c "$PGRWL_CONFIG" >"/tmp/pgrwl-basic/pgrwl-receive.log" 2>&1 &
+pgrwl daemon -c "$PGRWL_CONFIG" \
+  > >(tee -a "/tmp/pgrwl-basic/pgrwl-receive.log") \
+  2> >(tee -a "/tmp/pgrwl-basic/pgrwl-receive.log" >&2) &
 PGRWL_RECEIVE_PID=$!
 
 # Give the receiver a moment to connect and begin streaming.
