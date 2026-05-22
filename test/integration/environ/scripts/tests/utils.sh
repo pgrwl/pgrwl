@@ -176,6 +176,19 @@ x_search_errors_in_logs_or_fatal() {
   fi
 }
 
+# some errors are expected (for instance, in toxyproxy tests)
+x_search_errors_in_logs() {
+  log_info "searching for errors in pgrwl logs"
+  if [[ -f "${LOG_FILE}" ]]; then
+    grep -i "error" "${LOG_FILE}" || log_info "no errors found in pgrwl logs"
+  fi
+
+  log_info "searching for errors in pg logs"
+  if [[ -f "/var/log/postgresql/pg.log" ]]; then
+    grep -i "err" "/var/log/postgresql/pg.log" || log_info "no errors found in pg logs"
+  fi
+}
+
 x_print_ok() {
   printf "\nOK\n"
 }
