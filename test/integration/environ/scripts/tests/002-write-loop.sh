@@ -116,7 +116,7 @@ EOF
   echo_delim "run post_restore_check.sql"
   x_run_post_restore_check
 
-  x_search_errors_in_logs
+  x_search_errors_in_logs_or_fatal
   x_print_ok
 }
 
