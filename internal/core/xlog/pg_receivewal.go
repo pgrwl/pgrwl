@@ -114,12 +114,14 @@ func (pgrw *pgReceiveWal) streamLog(ctx context.Context) error {
 
 	// 1
 	if pgrw.conn == nil {
+		pgrw.log().Info("reconnect")
 		pgrw.conn, err = pgconn.Connect(context.Background(), pgrw.connStrRepl)
 		if err != nil {
 			pgrw.log().Error("cannot establish connection", slog.Any("err", err))
 			// not a fatal error, a reconnect loop will handle it
 			return nil
 		}
+		pgrw.log().Info("reconnected")
 	}
 
 	walSegSz := pgrw.walSegSz
@@ -220,7 +222,9 @@ func (pgrw *pgReceiveWal) streamLog(ctx context.Context) error {
 		err := pgrw.conn.Close(ctx)
 		if err != nil {
 			// not a fatal error, just log it
-			pgrw.log().Info("could not close connection", slog.Any("err", err))
+			pgrw.log().Warn("could not close connection", slog.Any("err", err))
+		} else {
+			pgrw.log().Info("connection closed")
 		}
 		pgrw.conn = nil
 	}

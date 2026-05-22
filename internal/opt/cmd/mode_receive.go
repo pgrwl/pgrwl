@@ -89,8 +89,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// This remains the core component. If it cannot be initialized, receive
 	// mode must not start.
 
-	// init replication connection
-
+	// init replication connection (NOTE: pgrw responsible for closing it, even during reconnects)
 	streamingConn, err := xlog.OpenReplicationConn(ctx, opts.Slot)
 	if err != nil {
 		return fmt.Errorf("init streaming conn: %w", err)
@@ -98,23 +97,12 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	if err := checkStreamingConn(streamingConn); err != nil {
 		return err
 	}
-	defer func() {
-		loggr.Info("closing connection")
-		xlog.CloseReplicationConn(streamingConn.Conn, loggr)
-	}()
 
 	// init pgrw
-
 	pgrw, err := initPgrw(ctx, streamingConn, opts)
 	if err != nil {
 		return fmt.Errorf("init wal receiver: %w", err)
 	}
-	defer func() {
-		// NOTE: during reconnect attempts pgrw may hold completely different connection
-		// than the first one (which was passed during initialization: streamingConn).
-		loggr.Info("closing pgrw connection")
-		xlog.CloseReplicationConn(pgrw.Conn(), loggr)
-	}()
 
 	//////////////////////////////////////////////////////////////////////
 	// Init receive/archive dependencies before starting goroutines.
