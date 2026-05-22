@@ -7,9 +7,10 @@ import (
 )
 
 type Opts struct {
-	PGRW         xlog.PgReceiveWal
-	BaseDir      string
-	Storage      *st.VariadicStorage
-	Cfg          *config.Config
-	StopReceiver func()
+	GetPgrw       func() xlog.PgReceiveWal
+	BaseDir       string
+	Storage       *st.VariadicStorage
+	Cfg           *config.Config
+	StopReceiver  func()
+	StartReceiver func() error
 }

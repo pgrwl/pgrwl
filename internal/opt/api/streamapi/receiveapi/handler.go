@@ -79,3 +79,11 @@ func (c *Handler) StopReceiverHandler(w http.ResponseWriter, _ *http.Request) {
 	c.Service.StopReceiver()
 	w.WriteHeader(http.StatusOK)
 }
+
+func (c *Handler) StartReceiverHandler(w http.ResponseWriter, r *http.Request) {
+	if err := c.Service.StartReceiver(); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}

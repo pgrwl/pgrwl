@@ -29,25 +29,28 @@ type Service interface {
 	ListBackups(ctx context.Context) ([]Backup, error)
 	GetWalFile(ctx context.Context, filename string) (io.ReadCloser, error)
 	StopReceiver()
+	StartReceiver() error
 }
 
 type svc struct {
-	l            *slog.Logger
-	pgrw         xlog.PgReceiveWal // direct access to running state
-	baseDir      string
-	storage      *st.VariadicStorage
-	stopReceiver func()
+	l             *slog.Logger
+	getPgrw       func() xlog.PgReceiveWal
+	baseDir       string
+	storage       *st.VariadicStorage
+	stopReceiver  func()
+	startReceiver func() error
 }
 
 var _ Service = &svc{}
 
 func NewService(opts *Opts) Service {
 	return &svc{
-		l:            slog.With("component", "receive-service"),
-		pgrw:         opts.PGRW,
-		baseDir:      opts.BaseDir,
-		storage:      opts.Storage,
-		stopReceiver: opts.StopReceiver,
+		l:             slog.With("component", "receive-service"),
+		getPgrw:       opts.GetPgrw,
+		baseDir:       opts.BaseDir,
+		storage:       opts.Storage,
+		stopReceiver:  opts.StopReceiver,
+		startReceiver: opts.StartReceiver,
 	}
 }
 
@@ -61,9 +64,11 @@ func (s *svc) log() *slog.Logger {
 func (s *svc) Status() *PgrwlStatus {
 	s.log().Debug("querying status")
 
+	pgrw := s.getPgrw()
+
 	var streamStatusResp *StreamStatus
-	if s.pgrw != nil {
-		streamStatus := s.pgrw.Status()
+	if pgrw != nil {
+		streamStatus := pgrw.Status()
 		streamStatusResp = &StreamStatus{
 			Slot:         streamStatus.Slot,
 			Timeline:     streamStatus.Timeline,
@@ -221,4 +226,8 @@ func (s *svc) GetWalFile(ctx context.Context, filename string) (io.ReadCloser, e
 
 func (s *svc) StopReceiver() {
 	s.stopReceiver()
+}
+
+func (s *svc) StartReceiver() error {
+	return s.startReceiver()
 }
