@@ -40,11 +40,11 @@ type ReceiveModeOpts struct {
 // supervisor, and basebackup supervisor as a restartable unit. The HTTP server
 // and storage are not part of this unit and remain running across stop/start.
 type receiverController struct {
-	mu      sync.Mutex
-	startMu sync.Mutex
-	pgrw    xlog.PgReceiveWal
-	rctx    context.Context
-	cancel  context.CancelFunc
+	mu       sync.Mutex
+	startMu  sync.Mutex
+	pgrw     xlog.PgReceiveWal
+	rctx     context.Context
+	cancel   context.CancelFunc
 	running  bool
 	stopping bool
 	genWG    sync.WaitGroup
@@ -76,7 +76,20 @@ func (r *receiverController) Stop() {
 	r.mu.Unlock()
 
 	cancel()
-	r.genWG.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		r.genWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(shutdownTimeout):
+		r.loggr.Error("receiver stop timed out waiting for goroutines",
+			slog.Duration("timeout", shutdownTimeout),
+		)
+	}
 
 	r.mu.Lock()
 	r.running = false
