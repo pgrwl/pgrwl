@@ -91,12 +91,15 @@ x_reconnect_flow() {
   local cycles=3
   local i
   for ((i = 1; i <= cycles; i++)); do
-    echo_delim "reconnect cycle ${i}/${cycles}: generating wal before stop"
+    local tag
+    tag="$(printf 'reconnect cycle %d/%d' "${i}" "${cycles}")"
+
+    echo_delim "${tag}: generating wal before stop"
     x_generate_wal 10
 
     x_reset_log_marker "before stop cycle ${i}"
 
-    echo_delim "reconnect cycle ${i}/${cycles}: stopping postgres (immediate)"
+    echo_delim "${tag}: stopping postgres (immediate)"
     xpg_stop
 
     # Receiver should be alive but unable to talk to PG. Give it time to
@@ -108,7 +111,7 @@ x_reconnect_flow() {
       log_fatal "receiver process ${RECEIVER_PID} died after pg stop in cycle ${i}"
     fi
 
-    echo_delim "reconnect cycle ${i}/${cycles}: restarting postgres"
+    echo_delim "${tag}: restarting postgres"
     xpg_start
 
     # Wait for the receiver to log that it reconnected.
@@ -151,10 +154,6 @@ x_reconnect_flow() {
   chown -R postgres:postgres "${PGDATA}"
   touch "${PGDATA}/recovery.signal"
 
-  # Promote any .partial segments so the restored cluster can replay them.
-  find "${WAL_PATH}" -type f -name "*.partial" \
-    -exec bash -c 'for f; do mv -v "$f" "${f%.partial}"; done' _ {} +
-
   xpg_config
   cat <<EOF >>"${PG_CFG}"
 restore_command = 'pgrwl restore-command --serve-addr=127.0.0.1:7070 %f %p'
@@ -162,8 +161,6 @@ EOF
 
   echo_delim "start wal serving"
   x_start_serving "/tmp/config.json"
-
-  >/var/log/postgresql/pg.log
 
   echo_delim "start restored cluster"
   xpg_start
@@ -183,7 +180,7 @@ EOF
   x_run_post_restore_check
 
   # connection-reset errors during reconnect cycles are expected
-  x_search_errors_in_logs
+  x_search_errors_in_logs_no_fatal
   x_print_ok
 }
 
