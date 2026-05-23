@@ -9,6 +9,8 @@
 #   - pgrwl dashboard UI
 #   - SeaweedFS S3-compatible storage
 #   - SeaweedFS admin dashboard
+#   - Prometheus
+#   - Grafana
 #
 # Useful URLs:
 #   pgrwl dashboard:       http://localhost:8585/ui
@@ -17,6 +19,8 @@
 #   SeaweedFS bucket view: http://localhost:8888/buckets/backups/
 #   SeaweedFS S3 API:      http://localhost:8333
 #   PostgreSQL:            psql -U postgres -h localhost -p 15432
+#   Prometheus:            http://localhost:9090
+#   Grafana:               http://localhost:3000  (admin/admin)
 
 services:
   ######################################################################
@@ -241,11 +245,92 @@ services:
           -master=seaweedfs:9333 \
           -filer=seaweedfs:8888
 
+  ######################################################################
+  # Prometheus
+  #
+  # Scrapes pgrwl-receive metrics endpoint.
+  # Open: http://localhost:9090
+  ######################################################################
+
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=3d"
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+    configs:
+      - source: prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        mode: "0444"
+    depends_on:
+      - pgrwl-receive
+
+  ######################################################################
+  # Grafana dashboard provisioner
+  #
+  # One-shot container: fetches the pgrwl dashboard JSON from GitHub
+  # into the shared grafana-dashboards volume before Grafana starts.
+  ######################################################################
+
+  grafana-init:
+    image: curlimages/curl:8.20.0
+    container_name: grafana-init
+    restart: "no"
+    user: root
+    volumes:
+      - grafana-dashboards:/dashboards
+    command: >
+      curl -fsSL
+      https://raw.githubusercontent.com/pgrwl/pgrwl/master/examples/k8s-quick-start/dashboards/pgrwl_basic_dashboard-v2.json
+      -o /dashboards/pgrwl_basic_dashboard-v2.json
+
+  ######################################################################
+  # Grafana
+  #
+  # Pre-provisioned with Prometheus datasource and pgrwl dashboard.
+  # Open: http://localhost:3000  (admin/admin)
+  ######################################################################
+
+  grafana:
+    image: grafana/grafana:12.0.2
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      TZ: "Asia/Aqtau"
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - grafana-dashboards:/var/lib/grafana/dashboards:ro
+    configs:
+      - source: grafana-datasources.yaml
+        target: /etc/grafana/provisioning/datasources/datasources.yaml
+        mode: "0444"
+      - source: grafana-dashboard-provider.yaml
+        target: /etc/grafana/provisioning/dashboards/provider.yaml
+        mode: "0444"
+    depends_on:
+      grafana-init:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_started
+
 volumes:
   pgrwl-data:
   pg-primary-data:
   seaweedfs-data:
   seaweedfs-admin-data:
+  prometheus-data:
+  grafana-data:
+  grafana-dashboards:
 
 configs:
   pg_hba.conf:
@@ -332,7 +417,7 @@ configs:
       backup:
         cron: "*/5 * * * *"
       metrics:
-        enable: false
+        enable: true
       storage:
         name: s3
         compression:
@@ -355,6 +440,38 @@ configs:
       receivers:
         - label: localhost
           addr: http://pgrwl-receive:7070
+
+  prometheus.yml:
+    content: |
+      global:
+        scrape_interval: 15s
+      scrape_configs:
+        - job_name: 'pgrwl'
+          static_configs:
+            - targets: ['pgrwl-receive:7070']
+
+  grafana-datasources.yaml:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus:9090
+          isDefault: true
+
+  grafana-dashboard-provider.yaml:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          updateIntervalSeconds: 10
+          options:
+            path: /var/lib/grafana/dashboards
 
   wal-generator.sh:
     content: |

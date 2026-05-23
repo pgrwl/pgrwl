@@ -121,7 +121,8 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
 **More examples**
 
 - [Kubernetes (S3, UI, metrics)](https://github.com/pgrwl/pgrwl/tree/master/examples/k8s-quick-start)
-- [Docker Compose (S3, UI)](docs/pgrwl/docker-compose-quick-start.md)
+- Download [docker-compose.yml](https://raw.githubusercontent.com/pgrwl/pgrwl/refs/heads/master/docker-compose.yml)
+  (it includes S3, UI, metrics), then run: `docker compose up -d`
 
 ---
 
