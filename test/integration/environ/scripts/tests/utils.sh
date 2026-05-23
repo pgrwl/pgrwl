@@ -7,7 +7,15 @@ TEST_STATE_PATH="/var/lib/postgresql/test-state/${TEST_NAME}"
 
 # Cleanup on exit (even on error)
 cleanup() {
+  rc=$?
+
   set +e
+
+  if [ "$rc" -ne 0 ]; then
+    cat /var/log/postgresql/pg.log
+    echo "ERROR: test failed with exit code $rc" >&2
+  fi
+
   # save content for debug
   mkdir -p "${TEST_STATE_PATH}"
   cp -a /tmp/* "${TEST_STATE_PATH}/"
