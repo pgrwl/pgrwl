@@ -36,7 +36,7 @@ func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupd
 	}
 
 	// create connection
-	streamingConn, err := xlog.OpenReplicationConn(ctx, applicationName)
+	streamingConn, err := xlog.OpenReplicationConn(ctx, loggr, applicationName)
 	if err != nil {
 		loggr.Error("cannot establish connection", slog.Any("err", err))
 		return nil, err

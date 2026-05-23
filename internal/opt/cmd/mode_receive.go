@@ -90,7 +90,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// mode must not start.
 
 	// init replication connection (NOTE: pgrw responsible for closing it, even during reconnects)
-	streamingConn, err := xlog.OpenReplicationConn(ctx, opts.Slot)
+	streamingConn, err := xlog.OpenReplicationConn(ctx, loggr, opts.Slot)
 	if err != nil {
 		return fmt.Errorf("init streaming conn: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/pgrwl/pgrwl/internal/opt/shared/retry"
 )
 
 type StreamingConn struct {
@@ -16,21 +17,30 @@ type StreamingConn struct {
 	StartupInfo *StartupInfo
 }
 
-func OpenReplicationConn(ctx context.Context, applicationName string) (*StreamingConn, error) {
-	loggr := slog.With(slog.String("component", "startup-info"))
-	loggr.Info("open connection")
+func OpenReplicationConn(ctx context.Context, loggr *slog.Logger, applicationName string) (*StreamingConn, error) {
+	l := loggr.With(slog.String("job", "open-replication-conn"))
+	l.Info("open connection")
 
 	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", applicationName)
-	conn, err := pgconn.Connect(ctx, connStrRepl)
+
+	// connect with retry (5s * 60 = 300s = 5m)
+	conn, err := retry.Do(ctx, retry.Policy{
+		Delay:       5 * time.Second,
+		MaxAttempts: 60,
+		Logger: l.With(
+			slog.String("retry-operation", "connect-replication"),
+		),
+	}, func(ctx context.Context) (*pgconn.PgConn, error) {
+		return pgconn.Connect(ctx, connStrRepl)
+	})
+
 	if err != nil {
-		loggr.Error("cannot establish connection",
-			slog.Any("err", err),
-		)
 		return nil, err
 	}
+
 	startupInfo, err := GetStartupInfo(conn)
 	if err != nil {
-		loggr.Error("cannot get startup info",
+		l.Error("cannot get startup info",
 			slog.Any("err", err),
 		)
 		return nil, err

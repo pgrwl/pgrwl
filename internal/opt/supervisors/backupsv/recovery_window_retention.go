@@ -49,7 +49,9 @@ func (r *recoveryWindowRetention) RunBeforeBackup(ctx context.Context) error {
 	}
 
 	if len(successful) == 0 {
-		r.l.Warn("recovery-window retention skipped: no successful backups with readable manifests")
+		r.l.Warn("recovery-window retention skipped",
+			slog.String("cause", "no successful backups with readable manifests"),
+		)
 		return nil
 	}
 

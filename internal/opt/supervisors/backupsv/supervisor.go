@@ -167,7 +167,9 @@ func (s *baseBackupSupervisor) handleRunError(kind string, err error) {
 		s.log().Info(kind+" basebackup stopped", slog.Any("reason", err))
 
 	case errors.Is(err, ErrBackupAlreadyRunning):
-		s.log().Warn("previous basebackup still running, skipping this run")
+		s.log().Warn("skipping basebackup run",
+			slog.String("cause", "previous basebackup still running"),
+		)
 
 	default:
 		s.log().Error(kind+" basebackup run failed", slog.Any("err", err))
