@@ -285,7 +285,7 @@ func (stream *StreamCtl) closeAndRename() error {
 	}
 	stream.walfile = nil
 
-	l.Debug("fsync filename and parent-directory", slog.String("path", filepath.ToSlash(finalName)))
+	l.Debug("fsync filename and parent-dir", slog.String("path", filepath.ToSlash(finalName)))
 	if err := fsync.FsyncFnameAndDir(finalName); err != nil {
 		return err
 	}
