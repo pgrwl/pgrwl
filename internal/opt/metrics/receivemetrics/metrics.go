@@ -16,13 +16,10 @@ var (
 )
 
 type pgrwlMetrics interface {
-	MetricsEnabled() bool
 	AddWALBytesReceived(float64)
 	IncWALFilesReceived()
 	IncWALFilesUploaded()
 	IncWALFilesDeleted()
-	AddWALFilesDeleted(f float64)
-	UptimeSet()
 	StartUptimeReporter(ctx context.Context)
 }
 
@@ -32,13 +29,10 @@ type pgrwlMetricsNoop struct{}
 
 var _ pgrwlMetrics = &pgrwlMetricsNoop{}
 
-func (p pgrwlMetricsNoop) MetricsEnabled() bool                  { return false }
 func (p pgrwlMetricsNoop) AddWALBytesReceived(_ float64)         {}
 func (p pgrwlMetricsNoop) IncWALFilesReceived()                  {}
 func (p pgrwlMetricsNoop) IncWALFilesUploaded()                  {}
 func (p pgrwlMetricsNoop) IncWALFilesDeleted()                   {}
-func (p pgrwlMetricsNoop) AddWALFilesDeleted(_ float64)          {}
-func (p pgrwlMetricsNoop) UptimeSet()                            {}
 func (p pgrwlMetricsNoop) StartUptimeReporter(_ context.Context) {}
 
 // prom
@@ -89,10 +83,6 @@ func InitPromMetrics(ctx context.Context) {
 	M.StartUptimeReporter(ctx)
 }
 
-func (p *pgrwlMetricsProm) MetricsEnabled() bool {
-	return true
-}
-
 // receive, manage, etc...
 
 func (p *pgrwlMetricsProm) AddWALBytesReceived(f float64) {
@@ -109,10 +99,6 @@ func (p *pgrwlMetricsProm) IncWALFilesUploaded() {
 
 func (p *pgrwlMetricsProm) IncWALFilesDeleted() {
 	p.walFilesDeleted.Inc()
-}
-
-func (p *pgrwlMetricsProm) AddWALFilesDeleted(f float64) {
-	p.walFilesDeleted.Add(f)
 }
 
 // maintenance
