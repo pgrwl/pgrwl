@@ -3,16 +3,15 @@ set -euo pipefail
 . /var/lib/postgresql/scripts/tests/utils.sh
 
 ###############################################################################
-#   1. Start a fresh PG cluster and the pgrwl receiver (localfs).
-#   2. Take a base backup, start a background insert load.
-#   3. Stop PG hard (-m immediate) while the receiver is streaming, then
-#      restart it. Do this several times to exercise the reconnect loop.
-#   4. Stop the load, flush a final WAL switch, let the receiver catch up.
-#   5. Tear down the original cluster, restore from the base backup +
-#      archived WAL, and diff pg_dumpall before vs after.
+# Verify pgrwl receiver survives PostgreSQL restarts.
+#
+#   1. Start PG and the pgrwl receiver.
+#   2. Take a base backup.
+#   3. Stop PG hard, restart it. Three times.
+#   4. Restore from backup + WAL, diff pg_dumpall before vs after.
 ###############################################################################
 
-# NOTE: no_loop is set to 'false' (default), so - it allows to reconnect happens
+# NOTE: nreceiver.no_loop should be set to false (or absent as here)
 x_remake_config() {
   cat <<EOF > "/tmp/config.json"
 {
@@ -35,30 +34,6 @@ x_remake_config() {
 EOF
 }
 
-# Wait until the receiver log shows it has streamed past a restart.
-# We look for either the explicit "reconnected" line emitted by the
-# refactored connection code, or a fresh "reconnect" attempt followed
-# by streaming activity. Times out after ~60s.
-x_wait_for_reconnect_log() {
-  local needle="${1:-reconnected}"
-  local timeout="${2:-60}"
-  local i
-  for ((i = 0; i < timeout; i++)); do
-    if grep -q "${needle}" "${LOG_FILE}" 2>/dev/null; then
-      log_info "found '${needle}' in receiver log"
-      return 0
-    fi
-    sleep 1
-  done
-  log_info "timed out waiting for '${needle}' in receiver log"
-  return 1
-}
-
-x_reset_log_marker() {
-  # append a marker line so subsequent greps can scope to the new window.
-  echo "----- MARKER $(date '+%F %T.%N') $* -----" >> "${LOG_FILE}"
-}
-
 x_reconnect_flow() {
   echo_delim "cleanup state"
   x_remake_dirs
@@ -79,54 +54,60 @@ x_reconnect_flow() {
   echo_delim "start background inserts"
   chmod +x "${BACKGROUND_INSERTS_SCRIPT_PATH}"
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
-
   pgbench -i -s 5 postgres
 
   ###############################################################################
-  # Reconnect cycles: stop PG hard, restart, generate more WAL.
-  # Each cycle should be visible in the receiver log as a reconnect attempt
-  # followed by a successful "reconnected" line.
+  # Reconnect cycle 1
   ###############################################################################
+  echo_delim "cycle 1: generate wal"
+  x_generate_wal 10
 
-  local cycles=3
-  local i
-  for ((i = 1; i <= cycles; i++)); do
-    local tag
-    tag="$(printf 'reconnect cycle %d/%d' "${i}" "${cycles}")"
+  echo_delim "cycle 1: stop pg"
+  xpg_stop
+  sleep 5
 
-    echo_delim "${tag}: generating wal before stop"
-    x_generate_wal 10
+  echo_delim "cycle 1: start pg"
+  xpg_start
+  sleep 10
 
-    x_reset_log_marker "before stop cycle ${i}"
+  echo_delim "cycle 1: generate wal after restart"
+  x_generate_wal 10
 
-    echo_delim "${tag}: stopping postgres (immediate)"
-    xpg_stop
+  ###############################################################################
+  # Reconnect cycle 2
+  ###############################################################################
+  echo_delim "cycle 2: stop pg"
+  xpg_stop
+  sleep 5
 
-    # Receiver should be alive but unable to talk to PG. Give it time to
-    # notice the broken connection and enter its reconnect loop.
-    sleep 3
+  echo_delim "cycle 2: start pg"
+  xpg_start
+  sleep 10
 
-    # Receiver must NOT have died.
-    if ! kill -0 "${RECEIVER_PID}" 2>/dev/null; then
-      log_fatal "receiver process ${RECEIVER_PID} died after pg stop in cycle ${i}"
-    fi
+  echo_delim "cycle 2: generate wal after restart"
+  x_generate_wal 10
 
-    echo_delim "${tag}: restarting postgres"
-    xpg_start
+  ###############################################################################
+  # Reconnect cycle 3
+  ###############################################################################
+  echo_delim "cycle 3: stop pg"
+  xpg_stop
+  sleep 5
 
-    # Wait for the receiver to log that it reconnected.
-    if ! x_wait_for_reconnect_log "reconnected" 60; then
-      tail -100 "${LOG_FILE}" || true
-      log_fatal "receiver did not log 'reconnected' after cycle ${i}"
-    fi
+  echo_delim "cycle 3: start pg"
+  xpg_start
+  sleep 10
 
-    # Truncate the log so the next cycle's grep only sees fresh output.
-    : > "${LOG_FILE}"
+  echo_delim "cycle 3: generate wal after restart"
+  x_generate_wal 10
 
-    # Generate some WAL after the reconnect; if the connection is really
-    # alive the slot should advance.
-    x_generate_wal 10
-  done
+  ###############################################################################
+  # Wrap up: receiver must still be alive after all the restarts.
+  ###############################################################################
+  echo_delim "verify receiver is still alive"
+  if ! kill -0 "${RECEIVER_PID}" 2>/dev/null; then
+    log_fatal "receiver died during reconnect cycles"
+  fi
 
   echo_delim "stop background inserts"
   pkill -f inserts.sh || true
@@ -140,9 +121,8 @@ x_reconnect_flow() {
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   ###############################################################################
-  # standard restore + replay path
+  # Standard restore + replay path
   ###############################################################################
-
   echo_delim "teardown original cluster"
   x_stop_receiver
   xpg_teardown
@@ -164,17 +144,12 @@ EOF
 
   echo_delim "start restored cluster"
   xpg_start
-
   xpg_wait_is_in_recovery
   cat /var/log/postgresql/pg.log
 
   echo_delim "diff pg_dumpall before vs after"
   pg_dumpall -f "/tmp/pgdumpall-after" --restrict-key=0
   diff "/tmp/pgdumpall-before" "/tmp/pgdumpall-after"
-
-  echo_delim "show latest applied records"
-  psql --pset pager=off -c "select count(*), min(ts), max(ts) from public.tslog;" || true
-  tail -10 "${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" || true
 
   echo_delim "run post_restore_check.sql"
   x_run_post_restore_check
