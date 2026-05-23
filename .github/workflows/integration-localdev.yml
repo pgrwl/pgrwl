@@ -20,6 +20,7 @@ on:
       - "**/*.gitattributes"
       - "Makefile"
       - ".golangci.yml"
+      - "docker-compose.yml"
   pull_request:
     branches: *branches
     paths-ignore: *paths-ignore
