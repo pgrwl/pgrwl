@@ -23,6 +23,9 @@ func OpenReplicationConn(ctx context.Context, loggr *slog.Logger, applicationNam
 	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", applicationName)
 	conn, err := pgconn.Connect(ctx, connStrRepl)
 	if err != nil {
+		l.Error("cannot establish connection",
+			slog.Any("err", err),
+		)
 		return nil, err
 	}
 
