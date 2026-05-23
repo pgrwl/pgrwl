@@ -89,7 +89,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// This remains the core component. If it cannot be initialized, receive
 	// mode must not start.
 
-	// init replication connection (NOTE: pgrw responsible for closing it, even during reconnects)
+	// init replication connection
+	// NOTE: pgrw responsible for closing it, even during reconnects
+	// NOTE: do not share this connection between wal-streaming and basebackup-streaming
 	streamingConn, err := xlog.OpenReplicationConn(ctx, loggr, opts.Slot)
 	if err != nil {
 		return fmt.Errorf("init streaming conn: %w", err)
@@ -186,7 +188,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			}
 		}()
 
-		if err := basebackupSupervisor.RunCron(ctx); err != nil {
+		if err := basebackupSupervisor.RunCronDaemon(ctx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}

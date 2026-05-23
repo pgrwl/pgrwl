@@ -93,7 +93,7 @@ func TestRetentionScenarioDeletesOnlyBackupsOlderThanAnchorAndWALBeforeAnchor(t 
 		putScenarioRaw(t, walBackend, wal)
 	}
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),
@@ -143,7 +143,7 @@ func TestRetentionScenarioKeepLastCanMoveAnchorEarlierForDurability(t *testing.T
 
 	// Without KeepLast=3, the anchor would be 20260425065500. KeepLast=3 moves
 	// it earlier to 20260424065500 so the newest 3 backups remain recoverable.
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 3),
@@ -180,7 +180,7 @@ func TestRetentionScenarioAllBackupsNewerThanWindowKeepsAllBackupsButPurgesPreAn
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 	putScenarioRaw(t, walBackend, "000000010000003C000000DA")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(7*24*time.Hour, 1),
@@ -224,7 +224,7 @@ func TestRetentionScenarioSkipsBrokenBackupsWithoutDeletingThem(t *testing.T) {
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 	putScenarioRaw(t, walBackend, "000000010000003C000000DA")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),
@@ -259,7 +259,7 @@ func TestRetentionScenarioBackupDeleteFailureStopsBeforeWALCleanup(t *testing.T)
 	putScenarioRaw(t, walBackend, "000000010000003C000000D8")
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),
@@ -291,7 +291,7 @@ func TestRetentionScenarioWALDeleteFailureReturnsErrorAfterBackupDelete(t *testi
 	putScenarioRaw(t, walBackend, "000000010000003C000000D8")
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),

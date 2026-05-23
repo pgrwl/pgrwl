@@ -182,6 +182,17 @@ func TestBackupStoreDeleteBackupsAllowsUnreadableManifest(t *testing.T) {
 	assert.Equal(t, []string{"20260502065500"}, storage.deletedDirs)
 }
 
+func TestBackupStoreListBackupDirsPropagatesStorageError(t *testing.T) {
+	storage, _ := newRecordingMemoryStorage()
+	storage.listTopLevelDirsErr = errors.New("list failed")
+	store := newTestBackupStore(storage)
+
+	dirs, err := store.ListBackupDirs(context.Background())
+
+	require.Error(t, err)
+	assert.Nil(t, dirs)
+}
+
 func TestBackupStoreDeleteBackupsEmptyInputDoesNothing(t *testing.T) {
 	ctx := context.Background()
 	storage, _ := newRecordingMemoryStorage()

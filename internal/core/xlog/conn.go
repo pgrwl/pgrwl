@@ -33,7 +33,6 @@ func OpenReplicationConn(ctx context.Context, loggr *slog.Logger, applicationNam
 	}, func(ctx context.Context) (*pgconn.PgConn, error) {
 		return pgconn.Connect(ctx, connStrRepl)
 	})
-
 	if err != nil {
 		return nil, err
 	}
