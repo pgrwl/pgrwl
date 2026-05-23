@@ -38,7 +38,6 @@ type ReceiveModeOpts struct {
 	ListenPort       int
 }
 
-//nolint:gocyclo
 func RunReceiveMode(opts *ReceiveModeOpts) error {
 	cfg, err := config.Cfg()
 	if err != nil {
@@ -50,7 +49,6 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// setup context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	ctx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
@@ -81,74 +79,27 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		}
 	}
 
-	// print options
-	loggr.LogAttrs(ctx, slog.LevelInfo, "receiver opts", slog.Any("opts", opts))
-
 	//////////////////////////////////////////////////////////////////////
 	// Init WAL-receiver first.
 	//
 	// This remains the core component. If it cannot be initialized, receive
 	// mode must not start.
 
-	// init replication connection
-	// NOTE: pgrw responsible for closing it, even during reconnects
-	// NOTE: do not share this connection between wal-streaming and basebackup-streaming
-	streamingConn, err := retry.Do(ctx, retry.Policy{
-		// connect with retry (5s * 60 = 300s = 5m)
-		Delay:       5 * time.Second,
-		MaxAttempts: 60,
-		Logger:      loggr.With("retry", "open-conn:mode-receive"),
-	}, func(ctx context.Context) (*xlog.StreamingConn, error) {
-		return xlog.OpenReplicationConn(ctx, loggr, opts.Slot)
-	})
+	loggr.InfoContext(ctx, "receiver opts", slog.Any("opts", opts))
+
+	comp, err := initComponents(ctx, opts, loggr, cfg)
 	if err != nil {
-		return fmt.Errorf("init streaming conn: %w", err)
-	}
-	if err := checkStreamingConn(streamingConn); err != nil {
 		return err
 	}
 
-	// init pgrw
-	pgrw, err := initPgrw(ctx, streamingConn, opts)
-	if err != nil {
-		return fmt.Errorf("init wal receiver: %w", err)
-	}
-
-	//////////////////////////////////////////////////////////////////////
-	// Init receive/archive dependencies before starting goroutines.
-
-	walSegSz := streamingConn.StartupInfo.WalSegSz
-
-	walStor, err := initWalStorage(loggr, opts, walSegSz)
-	if err != nil {
-		return fmt.Errorf("init wal storage: %w", err)
-	}
-
-	basebackupStor, err := initBasebackupStorage(cfg.Main.Directory)
-	if err != nil {
-		return fmt.Errorf("init basebackup storage: %w", err)
-	}
-
-	basebackupSupervisor, err := backupsv.NewBaseBackupSupervisor(&backupsv.BackupSupervisorOpts{
-		Directory:      opts.ReceiveDirectory,
-		WalSegSz:       walSegSz,
-		BasebackupStor: basebackupStor,
-		WalStor:        walStor,
-		Cfg:            cfg,
-	})
-	if err != nil {
-		return fmt.Errorf("init basebackup supervisor: %w", err)
-	}
-
-	// setup metrics
-	initMetrics(ctx, cfg, loggr)
-
-	var wg sync.WaitGroup
+	initMetricsWhenEnabled(ctx, cfg, loggr)
 
 	//////////////////////////////////////////////////////////////////////
 	// Main WAL receiver loop.
 	//
 	// Critical component. Any error or panic is fatal.
+
+	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
@@ -162,7 +113,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 		loggr.Info("wal-receiver started")
 
-		if err := pgrw.Run(ctx); err != nil {
+		if err := comp.pgrw.Run(ctx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				loggr.Info("wal-receiver stopped", slog.String("reason", "context canceled"))
 				return
@@ -196,7 +147,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			}
 		}()
 
-		if err := basebackupSupervisor.RunCronDaemon(ctx); err != nil {
+		if err := comp.basebackupSupervisor.RunCronDaemon(ctx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -230,13 +181,13 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 		handlers := streamapi.Init(&streamapi.Opts{
 			Receive: &receiveapi.Opts{
-				PGRW:    pgrw,
+				PGRW:    comp.pgrw,
 				BaseDir: opts.ReceiveDirectory,
-				Storage: walStor,
+				Storage: comp.walStor,
 				Cfg:     cfg,
 			},
 			Backup: &backupapi.Opts{
-				Supervisor: basebackupSupervisor,
+				Supervisor: comp.basebackupSupervisor,
 				AppCtx:     ctx,
 			},
 			Cfg: cfg,
@@ -254,7 +205,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	}()
 
 	//////////////////////////////////////////////////////////////////////
-	// ArchiveSupervisor.
+	// ArchiveSupervisor. Responsible for managing wal-directory (compress/encrypt/upload).
 
 	wg.Add(1)
 	go func() {
@@ -266,9 +217,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			}
 		}()
 
-		u := receivesv.NewArchiveSupervisor(cfg, walStor, &receivesv.Opts{
+		u := receivesv.NewArchiveSupervisor(cfg, comp.walStor, &receivesv.Opts{
 			ReceiveDirectory: opts.ReceiveDirectory,
-			PGRW:             pgrw,
+			PGRW:             comp.pgrw,
 		})
 
 		if err := u.Run(ctx); err != nil {
@@ -340,7 +291,75 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	return runErr
 }
 
-func initMetrics(ctx context.Context, cfg *config.Config, loggr *slog.Logger) {
+type components struct {
+	pgrw                 xlog.PgReceiveWal
+	walStor              *st.VariadicStorage
+	basebackupSupervisor backupsv.BaseBackupSupervisor
+}
+
+func initComponents(
+	ctx context.Context,
+	opts *ReceiveModeOpts,
+	loggr *slog.Logger,
+	cfg *config.Config,
+) (*components, error) {
+	// init replication connection
+	// NOTE: pgrw responsible for closing it, even during reconnects
+	// NOTE: do not share this connection between wal-streaming and basebackup-streaming
+	streamingConn, err := retry.Do(ctx, retry.Policy{
+		// connect with retry (5s * 60 = 300s = 5m)
+		Delay:       5 * time.Second,
+		MaxAttempts: 60,
+		Logger:      loggr.With("retry", "open-conn:mode-receive"),
+	}, func(ctx context.Context) (*xlog.StreamingConn, error) {
+		return xlog.OpenReplicationConn(ctx, loggr, opts.Slot)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init streaming conn: %w", err)
+	}
+	if err := checkStreamingConn(streamingConn); err != nil {
+		return nil, err
+	}
+
+	// init pgrw
+	pgrw, err := initPgrw(ctx, streamingConn, opts)
+	if err != nil {
+		return nil, fmt.Errorf("init wal receiver: %w", err)
+	}
+
+	// init receive/archive dependencies
+
+	walSegSz := streamingConn.StartupInfo.WalSegSz
+
+	walStor, err := initWalStorage(loggr, opts, walSegSz)
+	if err != nil {
+		return nil, fmt.Errorf("init wal storage: %w", err)
+	}
+
+	basebackupStor, err := initBasebackupStorage(cfg.Main.Directory)
+	if err != nil {
+		return nil, fmt.Errorf("init basebackup storage: %w", err)
+	}
+
+	basebackupSupervisor, err := backupsv.NewBaseBackupSupervisor(&backupsv.BackupSupervisorOpts{
+		Directory:      opts.ReceiveDirectory,
+		WalSegSz:       walSegSz,
+		BasebackupStor: basebackupStor,
+		WalStor:        walStor,
+		Cfg:            cfg,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init basebackup supervisor: %w", err)
+	}
+
+	return &components{
+		pgrw:                 pgrw,
+		walStor:              walStor,
+		basebackupSupervisor: basebackupSupervisor,
+	}, nil
+}
+
+func initMetricsWhenEnabled(ctx context.Context, cfg *config.Config, loggr *slog.Logger) {
 	if cfg.Metrics.Enable {
 		loggr.Debug("init prom metrics")
 		receivemetrics.InitPromMetrics(ctx)
