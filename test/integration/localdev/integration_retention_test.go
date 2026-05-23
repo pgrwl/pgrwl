@@ -87,7 +87,7 @@ func TestIntegrationRetentionLocaldev(t *testing.T) {
 		},
 	}
 
-	retention := backupsv.NewRecoveryWindowRetention(
+	retention, err := backupsv.NewRetentionService(
 		&backupsv.BackupSupervisorOpts{
 			WalSegSz:       walSegSz,
 			BasebackupStor: backupStorage,
@@ -95,6 +95,7 @@ func TestIntegrationRetentionLocaldev(t *testing.T) {
 			Cfg:            cfg,
 		},
 	)
+	require.NoError(t, err)
 
 	err = retention.RunBeforeBackup(ctx)
 	require.NoError(t, err)
