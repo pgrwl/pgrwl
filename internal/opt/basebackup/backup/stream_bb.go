@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pgrwl/pgrwl/internal/core/logger"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
 	"github.com/pgrwl/pgrwl/internal/opt/metrics/backupmetrics"
 	"github.com/pgrwl/pgrwl/internal/opt/shared/x/fsx"
@@ -181,7 +182,7 @@ func (bb *baseBackup) streamBaseBackup(ctx context.Context) (*backupdto.Result, 
 
 				if inManifest {
 					mData := m.Data[1:]
-					log.Debug("writing manifest data", slog.Int("len", len(mData)))
+					log.LogAttrs(ctx, logger.LevelTrace, "writing manifest data", slog.Int("len", len(mData)))
 					if _, err := manifestBuf.Write(mData); err != nil {
 						return nil, fmt.Errorf("write manifest buffer: %w", err)
 					}

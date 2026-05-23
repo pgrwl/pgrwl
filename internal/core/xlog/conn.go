@@ -16,21 +16,19 @@ type StreamingConn struct {
 	StartupInfo *StartupInfo
 }
 
-func OpenReplicationConn(ctx context.Context, applicationName string) (*StreamingConn, error) {
-	loggr := slog.With(slog.String("component", "startup-info"))
-	loggr.Info("open connection")
+func OpenReplicationConn(ctx context.Context, loggr *slog.Logger, applicationName string) (*StreamingConn, error) {
+	l := loggr.With(slog.String("fn", "OpenReplicationConn"))
+	l.Info("open connection")
 
 	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", applicationName)
 	conn, err := pgconn.Connect(ctx, connStrRepl)
 	if err != nil {
-		loggr.Error("cannot establish connection",
-			slog.Any("err", err),
-		)
 		return nil, err
 	}
+
 	startupInfo, err := GetStartupInfo(conn)
 	if err != nil {
-		loggr.Error("cannot get startup info",
+		l.Error("cannot get startup info",
 			slog.Any("err", err),
 		)
 		return nil, err

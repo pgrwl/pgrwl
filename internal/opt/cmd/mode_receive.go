@@ -14,6 +14,7 @@ import (
 
 	"github.com/pgrwl/pgrwl/internal/opt/api/streamapi/backupapi"
 	"github.com/pgrwl/pgrwl/internal/opt/api/streamapi/receiveapi"
+	"github.com/pgrwl/pgrwl/internal/opt/shared/retry"
 
 	"github.com/pgrwl/pgrwl/internal/opt/api/streamapi"
 
@@ -89,8 +90,17 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// This remains the core component. If it cannot be initialized, receive
 	// mode must not start.
 
-	// init replication connection (NOTE: pgrw responsible for closing it, even during reconnects)
-	streamingConn, err := xlog.OpenReplicationConn(ctx, opts.Slot)
+	// init replication connection
+	// NOTE: pgrw responsible for closing it, even during reconnects
+	// NOTE: do not share this connection between wal-streaming and basebackup-streaming
+	streamingConn, err := retry.Do(ctx, retry.Policy{
+		// connect with retry (5s * 60 = 300s = 5m)
+		Delay:       5 * time.Second,
+		MaxAttempts: 60,
+		Logger:      loggr.With("retry", "open-conn:mode-receive"),
+	}, func(ctx context.Context) (*xlog.StreamingConn, error) {
+		return xlog.OpenReplicationConn(ctx, loggr, opts.Slot)
+	})
 	if err != nil {
 		return fmt.Errorf("init streaming conn: %w", err)
 	}
@@ -186,7 +196,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			}
 		}()
 
-		if err := basebackupSupervisor.RunCron(ctx); err != nil {
+		if err := basebackupSupervisor.RunCronDaemon(ctx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}

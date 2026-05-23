@@ -93,7 +93,7 @@ func TestBackupRunnerRunFailsWhenContextAlreadyCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := runner.Run(ctx, "manual")
+	err := runner.RunBackupSync(ctx, "manual")
 
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, BackupRunIdle, state.Snapshot().Status)
@@ -105,7 +105,7 @@ func TestBackupRunnerRunSucceedsAndMarksStateSucceeded(t *testing.T) {
 	creator := &fakeBaseBackupCreator{}
 	runner := newTestRunner(state, retention, creator)
 
-	err := runner.Run(context.Background(), "manual")
+	err := runner.RunBackupSync(context.Background(), "manual")
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, retention.calls)
@@ -125,7 +125,7 @@ func TestBackupRunnerRunRetentionFailureSkipsBasebackupAndMarksFailed(t *testing
 	creator := &fakeBaseBackupCreator{}
 	runner := newTestRunner(state, retention, creator)
 
-	err := runner.Run(context.Background(), "cron")
+	err := runner.RunBackupSync(context.Background(), "cron")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "retention before basebackup")
@@ -144,7 +144,7 @@ func TestBackupRunnerRunBasebackupFailureMarksFailed(t *testing.T) {
 	creator := &fakeBaseBackupCreator{err: errors.New("basebackup failed")}
 	runner := newTestRunner(state, retention, creator)
 
-	err := runner.Run(context.Background(), "cron")
+	err := runner.RunBackupSync(context.Background(), "cron")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create basebackup")
@@ -163,7 +163,7 @@ func TestBackupRunnerRunRecoversRetentionPanicAndMarksFailed(t *testing.T) {
 	creator := &fakeBaseBackupCreator{}
 	runner := newTestRunner(state, retention, creator)
 
-	err := runner.Run(context.Background(), "cron")
+	err := runner.RunBackupSync(context.Background(), "cron")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "basebackup panicked")
@@ -182,7 +182,7 @@ func TestBackupRunnerRunRecoversBasebackupPanicAndMarksFailed(t *testing.T) {
 	creator := &fakeBaseBackupCreator{panic: "creator boom"}
 	runner := newTestRunner(state, retention, creator)
 
-	err := runner.Run(context.Background(), "cron")
+	err := runner.RunBackupSync(context.Background(), "cron")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "basebackup panicked")
@@ -201,7 +201,7 @@ func TestBackupRunnerRunReturnsAlreadyRunning(t *testing.T) {
 
 	runner := newTestRunner(state, &fakeRetentionService{}, &fakeBaseBackupCreator{})
 
-	err := runner.Run(context.Background(), "manual")
+	err := runner.RunBackupSync(context.Background(), "manual")
 
 	assert.ErrorIs(t, err, ErrBackupAlreadyRunning)
 	assert.Equal(t, "existing", state.Snapshot().Source)
@@ -212,7 +212,7 @@ func TestBackupRunnerStartAsyncReservesImmediatelyAndEventuallySucceeds(t *testi
 	creator := newBlockingBaseBackupCreator()
 	runner := newTestRunner(state, &fakeRetentionService{}, creator)
 
-	running, err := runner.StartAsync(context.Background(), "manual")
+	running, err := runner.RunBackupAsync(context.Background(), "manual")
 	require.NoError(t, err)
 	require.NotNil(t, running)
 	assert.True(t, running.Running)
@@ -227,7 +227,7 @@ func TestBackupRunnerStartAsyncReservesImmediatelyAndEventuallySucceeds(t *testi
 		}
 	}, time.Second, 10*time.Millisecond)
 
-	_, err = runner.StartAsync(context.Background(), "manual")
+	_, err = runner.RunBackupAsync(context.Background(), "manual")
 	assert.ErrorIs(t, err, ErrBackupAlreadyRunning)
 
 	close(creator.release)
@@ -243,7 +243,7 @@ func TestBackupRunnerStartAsyncEventuallyMarksFailure(t *testing.T) {
 	creator.err = errors.New("async failed")
 	runner := newTestRunner(state, &fakeRetentionService{}, creator)
 
-	_, err := runner.StartAsync(context.Background(), "manual")
+	_, err := runner.RunBackupAsync(context.Background(), "manual")
 	require.NoError(t, err)
 
 	assert.Eventually(t, func() bool {
@@ -268,7 +268,7 @@ func TestBackupRunnerStartAsyncRecoversPanicAndMarksFailure(t *testing.T) {
 	creator := &fakeBaseBackupCreator{panic: "async panic"}
 	runner := newTestRunner(state, &fakeRetentionService{}, creator)
 
-	_, err := runner.StartAsync(context.Background(), "manual")
+	_, err := runner.RunBackupAsync(context.Background(), "manual")
 	require.NoError(t, err)
 
 	assert.Eventually(t, func() bool {

@@ -14,8 +14,8 @@ type BackupRunnerOpts struct {
 }
 
 type BackupRunner interface {
-	Run(ctx context.Context, source string) error
-	StartAsync(ctx context.Context, source string) (*BackupRunState, error)
+	RunBackupSync(ctx context.Context, source string) error
+	RunBackupAsync(ctx context.Context, source string) (*BackupRunState, error)
 }
 
 type backupRunner struct {
@@ -36,7 +36,7 @@ func NewBackupRunner(opts *BackupRunnerOpts) BackupRunner {
 	}
 }
 
-func (r *backupRunner) Run(ctx context.Context, source string) error {
+func (r *backupRunner) RunBackupSync(ctx context.Context, source string) error {
 	if _, err := r.reserve(ctx, source); err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func (r *backupRunner) Run(ctx context.Context, source string) error {
 	return r.runReserved(ctx, source)
 }
 
-func (r *backupRunner) StartAsync(ctx context.Context, source string) (*BackupRunState, error) {
+func (r *backupRunner) RunBackupAsync(ctx context.Context, source string) (*BackupRunState, error) {
 	state, err := r.reserve(ctx, source)
 	if err != nil {
 		return nil, err

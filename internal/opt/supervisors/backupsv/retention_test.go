@@ -93,7 +93,7 @@ func TestRetentionScenarioDeletesOnlyBackupsOlderThanAnchorAndWALBeforeAnchor(t 
 		putScenarioRaw(t, walBackend, wal)
 	}
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),
@@ -143,7 +143,7 @@ func TestRetentionScenarioKeepLastCanMoveAnchorEarlierForDurability(t *testing.T
 
 	// Without KeepLast=3, the anchor would be 20260425065500. KeepLast=3 moves
 	// it earlier to 20260424065500 so the newest 3 backups remain recoverable.
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 3),
@@ -180,7 +180,7 @@ func TestRetentionScenarioAllBackupsNewerThanWindowKeepsAllBackupsButPurgesPreAn
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 	putScenarioRaw(t, walBackend, "000000010000003C000000DA")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(7*24*time.Hour, 1),
@@ -224,7 +224,7 @@ func TestRetentionScenarioSkipsBrokenBackupsWithoutDeletingThem(t *testing.T) {
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 	putScenarioRaw(t, walBackend, "000000010000003C000000DA")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),
@@ -259,7 +259,7 @@ func TestRetentionScenarioBackupDeleteFailureStopsBeforeWALCleanup(t *testing.T)
 	putScenarioRaw(t, walBackend, "000000010000003C000000D8")
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),
@@ -291,7 +291,7 @@ func TestRetentionScenarioWALDeleteFailureReturnsErrorAfterBackupDelete(t *testi
 	putScenarioRaw(t, walBackend, "000000010000003C000000D8")
 	putScenarioRaw(t, walBackend, "000000010000003C000000D9")
 
-	retention := NewRecoveryWindowRetention(
+	retention := newRecoveryWindowRetention(
 		&BackupSupervisorOpts{
 			WalSegSz:       retentionScenarioWalSegSize,
 			Cfg:            retentionScenarioConfig(72*time.Hour, 1),
@@ -425,3 +425,61 @@ var (
 	_ st.Storage = (*retentionScenarioDeleteDirFailStorage)(nil)
 	_ st.Storage = (*retentionScenarioDeleteFailStorage)(nil)
 )
+
+// testing retention service
+
+func TestNoopRetentionReturnsContextErrorOnly(t *testing.T) {
+	ctx := context.Background()
+	assert.NoError(t, NoopRetention{}.RunBeforeBackup(ctx))
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	assert.ErrorIs(t, NoopRetention{}.RunBeforeBackup(canceled), context.Canceled)
+}
+
+func TestNewRetentionServiceReturnsNoopWhenConfigNilOrDisabled(t *testing.T) {
+	svc, err := NewRetentionService(&BackupSupervisorOpts{})
+	require.NoError(t, err)
+	assert.IsType(t, NoopRetention{}, svc)
+
+	svc, err = NewRetentionService(&BackupSupervisorOpts{
+		Cfg: &config.Config{Retention: config.RetentionConfig{Enable: false}},
+	})
+	require.NoError(t, err)
+	assert.IsType(t, NoopRetention{}, svc)
+}
+
+func TestNewRetentionServiceReturnsErrorForUnsupportedType(t *testing.T) {
+	_, err := NewRetentionService(&BackupSupervisorOpts{
+		Cfg: &config.Config{Retention: config.RetentionConfig{
+			Enable: true,
+			Type:   "unknown",
+		}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported backup retention type")
+}
+
+func TestNewRetentionServiceRecoveryWindowReturnsService(t *testing.T) {
+	backend := st.NewInMemoryStorage()
+	walStor := newPlainVariadicStorage(t, backend)
+	keepLast := 1
+
+	svc, err := NewRetentionService(&BackupSupervisorOpts{
+		WalSegSz:       16 * 1024 * 1024,
+		BasebackupStor: backend,
+		WalStor:        walStor,
+		Cfg: &config.Config{Retention: config.RetentionConfig{
+			Enable:             true,
+			Type:               config.RetentionTypeRecoveryWindow,
+			KeepDurationParsed: 72 * time.Hour,
+			KeepLast:           &keepLast,
+		}},
+	})
+
+	require.NoError(t, err)
+	assert.NotNil(t, svc)
+
+	err = svc.RunBeforeBackup(context.Background())
+	require.NoError(t, err)
+}

@@ -38,7 +38,7 @@ func (s *svc) Start() (*backupsv.BackupRunState, error) {
 		return nil, err
 	}
 
-	state, err := s.supervisor.TriggerAsync(s.appCtx, "manual")
+	state, err := s.supervisor.TriggerBackupAsync(s.appCtx, "manual")
 	if err != nil {
 		return nil, err
 	}

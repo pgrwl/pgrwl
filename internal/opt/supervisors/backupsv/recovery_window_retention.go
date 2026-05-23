@@ -13,10 +13,6 @@ import (
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
 )
 
-type RecoveryWindowRetention interface {
-	RunBeforeBackup(ctx context.Context) error
-}
-
 type recoveryWindowRetention struct {
 	l           *slog.Logger
 	opts        *BackupSupervisorOpts
@@ -24,9 +20,7 @@ type recoveryWindowRetention struct {
 	walCleaner  WALCleaner
 }
 
-var _ RecoveryWindowRetention = &recoveryWindowRetention{}
-
-func NewRecoveryWindowRetention(opts *BackupSupervisorOpts) RecoveryWindowRetention {
+func newRecoveryWindowRetention(opts *BackupSupervisorOpts) *recoveryWindowRetention {
 	return &recoveryWindowRetention{
 		l:           slog.With(slog.String("component", "recovery-window-retention")),
 		opts:        opts,
@@ -36,6 +30,10 @@ func NewRecoveryWindowRetention(opts *BackupSupervisorOpts) RecoveryWindowRetent
 }
 
 func (r *recoveryWindowRetention) RunBeforeBackup(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	cfg := r.opts.Cfg
 
 	r.l.Info("starting retention",
@@ -49,7 +47,9 @@ func (r *recoveryWindowRetention) RunBeforeBackup(ctx context.Context) error {
 	}
 
 	if len(successful) == 0 {
-		r.l.Warn("recovery-window retention skipped: no successful backups with readable manifests")
+		r.l.Warn("recovery-window retention skipped",
+			slog.String("cause", "no successful backups with readable manifests"),
+		)
 		return nil
 	}
 
@@ -101,7 +101,8 @@ func (r *recoveryWindowRetention) loadSuccessfulBackups(ctx context.Context) ([]
 
 		info, err := r.backupStore.ReadManifest(ctx, backupID)
 		if err != nil {
-			r.l.Warn("backup skipped by retention because manifest cannot be read",
+			r.l.Warn("backup skipped by retention",
+				slog.String("cause", "manifest cannot be read"),
 				slog.String("backup_id", backupID),
 				slog.Any("err", err),
 			)
@@ -109,7 +110,8 @@ func (r *recoveryWindowRetention) loadSuccessfulBackups(ctx context.Context) ([]
 		}
 
 		if info.StartedAt.IsZero() {
-			r.l.Warn("backup skipped by retention because started_at is empty",
+			r.l.Warn("backup skipped by retention",
+				slog.String("cause", "started_at is empty"),
 				slog.String("backup_id", backupID),
 			)
 			continue

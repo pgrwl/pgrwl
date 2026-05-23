@@ -42,7 +42,7 @@ snapshot: ## Run snapshot build with goreleaser
 
 .PHONY: test
 test: ## Run unit tests
-	go test -v -race -cover -timeout 5m ./...
+	go test -v -race -cover -timeout=5m -count=1 ./...
 
 .PHONY: test-cov
 test-cov: ## Run tests with coverage report

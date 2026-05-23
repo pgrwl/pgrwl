@@ -329,6 +329,17 @@ func TestRecoveryWindowRetentionRunBeforeBackupReturnsWALCleanerError(t *testing
 	assert.Equal(t, 1, cleaner.calls)
 }
 
+func TestRecoveryWindowRetentionRunBeforeBackupReturnsContextError(t *testing.T) {
+	retention := newRetentionForTest(retentionConfigForTest(), newFakeBackupStore(), &fakeWALCleaner{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := retention.RunBeforeBackup(ctx)
+
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
 func TestRecoveryWindowRetentionRunBeforeBackupSkipsWhenNoSuccessfulBackups(t *testing.T) {
 	store := newFakeBackupStore()
 	cleaner := &fakeWALCleaner{}

@@ -23,9 +23,9 @@ type BackupSupervisorOpts struct {
 }
 
 type BaseBackupSupervisor interface {
-	RunCron(ctx context.Context) error
-	Trigger(ctx context.Context, source string) error
-	TriggerAsync(ctx context.Context, source string) (*BackupRunState, error)
+	RunCronDaemon(ctx context.Context) error
+	TriggerBackupSync(ctx context.Context, source string) error
+	TriggerBackupAsync(ctx context.Context, source string) (*BackupRunState, error)
 	BackupStatus() BackupRunState
 }
 
@@ -45,14 +45,17 @@ func NewBaseBackupSupervisor(opts *BackupSupervisorOpts) (BaseBackupSupervisor, 
 		return nil, err
 	}
 
+	retention, err := NewRetentionService(opts)
+	if err != nil {
+		return nil, err
+	}
+
 	state := NewBackupState()
 
 	runner := NewBackupRunner(&BackupRunnerOpts{
-		State:     state,
-		Retention: NewRetentionService(opts),
-		Basebackup: &basebackupCreator{
-			Directory: opts.Directory,
-		},
+		State:      state,
+		Retention:  retention,
+		Basebackup: &basebackupCreator{Directory: opts.Directory},
 	})
 
 	return &baseBackupSupervisor{
@@ -86,14 +89,7 @@ func checkOpts(opts *BackupSupervisorOpts) error {
 	return nil
 }
 
-func (s *baseBackupSupervisor) log() *slog.Logger {
-	if s.l != nil {
-		return s.l
-	}
-	return slog.With(slog.String("component", "basebackup-supervisor"))
-}
-
-// RunCron starts the basebackup scheduler and blocks until ctx is canceled.
+// RunCronDaemon starts the basebackup scheduler and blocks until ctx is canceled.
 //
 // Fatal/setup errors are returned:
 //   - cron expression is invalid
@@ -104,11 +100,11 @@ func (s *baseBackupSupervisor) log() *slog.Logger {
 //   - basebackup failed
 //   - WAL cleanup failed
 //   - panic inside a scheduled backup run
-func (s *baseBackupSupervisor) RunCron(ctx context.Context) error {
+func (s *baseBackupSupervisor) RunCronDaemon(ctx context.Context) error {
 	cfg := s.opts.Cfg
 
 	_, err := s.cron.AddFunc(cfg.Backup.Cron, func() {
-		if err := s.runner.Run(ctx, "cron"); err != nil {
+		if err := s.runner.RunBackupSync(ctx, "cron"); err != nil {
 			s.handleRunError("scheduled", err)
 		}
 	})
@@ -118,42 +114,40 @@ func (s *baseBackupSupervisor) RunCron(ctx context.Context) error {
 
 	s.cron.Start()
 
-	s.log().Info("basebackup scheduler started",
+	s.l.Info("basebackup scheduler started",
 		slog.String("cron", cfg.Backup.Cron),
 	)
 
 	<-ctx.Done()
 
-	s.log().Info("stopping basebackup scheduler")
+	s.l.Info("stopping basebackup scheduler")
 
 	stopCtx := s.cron.Stop()
 	<-stopCtx.Done()
 
-	s.log().Info("basebackup scheduler stopped")
+	s.l.Info("basebackup scheduler stopped")
 
 	return nil
 }
 
-// Trigger starts a basebackup run synchronously.
-func (s *baseBackupSupervisor) Trigger(ctx context.Context, source string) error {
+// TriggerBackupSync starts a basebackup run synchronously.
+func (s *baseBackupSupervisor) TriggerBackupSync(ctx context.Context, source string) error {
 	if source == "" {
 		source = "manual"
 	}
-
-	return s.runner.Run(ctx, source)
+	return s.runner.RunBackupSync(ctx, source)
 }
 
-// TriggerAsync starts a basebackup run in the background and returns the
+// TriggerBackupAsync starts a basebackup run in the background and returns the
 // running state after the backup slot has been reserved.
 //
 // Pass the application context here, not the HTTP request context, otherwise
 // the backup may be canceled as soon as the HTTP response is written.
-func (s *baseBackupSupervisor) TriggerAsync(ctx context.Context, source string) (*BackupRunState, error) {
+func (s *baseBackupSupervisor) TriggerBackupAsync(ctx context.Context, source string) (*BackupRunState, error) {
 	if source == "" {
 		source = "manual"
 	}
-
-	return s.runner.StartAsync(ctx, source)
+	return s.runner.RunBackupAsync(ctx, source)
 }
 
 func (s *baseBackupSupervisor) BackupStatus() BackupRunState {
@@ -164,13 +158,15 @@ func (s *baseBackupSupervisor) BackupStatus() BackupRunState {
 func (s *baseBackupSupervisor) handleRunError(kind string, err error) {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		s.log().Info(kind+" basebackup stopped", slog.Any("reason", err))
+		s.l.Info(kind+" basebackup stopped", slog.Any("reason", err))
 
 	case errors.Is(err, ErrBackupAlreadyRunning):
-		s.log().Warn("previous basebackup still running, skipping this run")
+		s.l.Warn("skipping basebackup run",
+			slog.String("cause", "previous basebackup still running"),
+		)
 
 	default:
-		s.log().Error(kind+" basebackup run failed", slog.Any("err", err))
+		s.l.Error(kind+" basebackup run failed", slog.Any("err", err))
 	}
 }
 

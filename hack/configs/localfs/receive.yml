@@ -14,7 +14,7 @@ devconfig:
     enable: true
 
 log:
-  level: info
+  level: debug
   format: pretty
   add_source: true
 
