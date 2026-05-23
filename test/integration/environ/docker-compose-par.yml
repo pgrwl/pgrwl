@@ -92,6 +92,11 @@ services:
     container_name: pg_014_stream_api_bb
     entrypoint: /var/lib/postgresql/scripts/tests/014-stream-api-basebackup.sh
 
+  pg_016_reconnect:
+    <<: *pg_test_common
+    container_name: pg_016_reconnect
+    entrypoint: /var/lib/postgresql/scripts/tests/016-reconnect.sh
+
   sshd:
     build:
       context: .

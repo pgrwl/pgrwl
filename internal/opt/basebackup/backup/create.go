@@ -3,27 +3,23 @@ package backup
 import (
 	"context"
 	"log/slog"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pgrwl/pgrwl/config"
+	"github.com/pgrwl/pgrwl/internal/core/xlog"
 	"github.com/pgrwl/pgrwl/internal/opt/api"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
 )
+
+const applicationName = "pgrwl_basebackup"
 
 type CreateBaseBackupOpts struct {
 	Directory string
 }
 
-func CreateBaseBackup(opts *CreateBaseBackupOpts) (*backupdto.Result, error) {
+func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupdto.Result, error) {
 	var err error
-
-	// setup context
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
 
 	// timestamp
 	ts := time.Now().UTC().Format("20060102150405")
@@ -40,14 +36,18 @@ func CreateBaseBackup(opts *CreateBaseBackupOpts) (*backupdto.Result, error) {
 	}
 
 	// create connection
-	conn, err := pgconn.Connect(ctx, "application_name=pgrwl_basebackup replication=yes")
+	streamingConn, err := xlog.OpenReplicationConn(ctx, applicationName)
 	if err != nil {
 		loggr.Error("cannot establish connection", slog.Any("err", err))
 		return nil, err
 	}
+	defer func() {
+		loggr.Info("closing basebackup connection")
+		xlog.CloseReplicationConn(streamingConn.Conn, loggr)
+	}()
 
 	// init module
-	baseBackup, err := NewBaseBackup(conn, stor, ts)
+	baseBackup, err := NewBaseBackup(streamingConn.Conn, stor, ts)
 	if err != nil {
 		loggr.Error("cannot init basebackup module", slog.Any("err", err))
 		return nil, err

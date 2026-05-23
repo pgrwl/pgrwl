@@ -63,7 +63,7 @@ func (u *ArchiveSupervisor) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			u.log().Info("context is done, exiting archive supervisor")
+			u.log().Info("exiting archive supervisor", slog.String("cause", "context is done"))
 			return ctx.Err()
 
 		case <-uploadTicker.C:

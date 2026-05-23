@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"sync"
@@ -36,6 +37,7 @@ type ReceiveModeOpts struct {
 	ListenPort       int
 }
 
+//nolint:gocyclo
 func RunReceiveMode(opts *ReceiveModeOpts) error {
 	cfg, err := config.Cfg()
 	if err != nil {
@@ -79,7 +81,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	}
 
 	// print options
-	loggr.LogAttrs(ctx, slog.LevelInfo, "opts", slog.Any("opts", opts))
+	loggr.LogAttrs(ctx, slog.LevelInfo, "receiver opts", slog.Any("opts", opts))
 
 	//////////////////////////////////////////////////////////////////////
 	// Init WAL-receiver first.
@@ -87,7 +89,17 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// This remains the core component. If it cannot be initialized, receive
 	// mode must not start.
 
-	pgrw, err := initPgrw(ctx, opts)
+	// init replication connection (NOTE: pgrw responsible for closing it, even during reconnects)
+	streamingConn, err := xlog.OpenReplicationConn(ctx, opts.Slot)
+	if err != nil {
+		return fmt.Errorf("init streaming conn: %w", err)
+	}
+	if err := checkStreamingConn(streamingConn); err != nil {
+		return err
+	}
+
+	// init pgrw
+	pgrw, err := initPgrw(ctx, streamingConn, opts)
 	if err != nil {
 		return fmt.Errorf("init wal receiver: %w", err)
 	}
@@ -95,7 +107,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	//////////////////////////////////////////////////////////////////////
 	// Init receive/archive dependencies before starting goroutines.
 
-	walStor, err := initWalStorage(loggr, opts, pgrw)
+	walSegSz := streamingConn.StartupInfo.WalSegSz
+
+	walStor, err := initWalStorage(loggr, opts, walSegSz)
 	if err != nil {
 		return fmt.Errorf("init wal storage: %w", err)
 	}
@@ -107,7 +121,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 
 	basebackupSupervisor, err := backupsv.NewBaseBackupSupervisor(&backupsv.BackupSupervisorOpts{
 		Directory:      opts.ReceiveDirectory,
-		WalSegSz:       pgrw.WalSegSz(),
+		WalSegSz:       walSegSz,
 		BasebackupStor: basebackupStor,
 		WalStor:        walStor,
 		Cfg:            cfg,
@@ -278,7 +292,9 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		cancel()
 	}
 
-	loggr.Info("shutting down, waiting for goroutines...")
+	loggr.Info("shutting down components",
+		slog.String("note", "waiting for goroutines..."),
+	)
 
 	done := make(chan struct{})
 	go func() {
@@ -322,32 +338,47 @@ func initMetrics(ctx context.Context, cfg *config.Config, loggr *slog.Logger) {
 	}
 }
 
-func initPgrw(ctx context.Context, opts *ReceiveModeOpts) (xlog.PgReceiveWal, error) {
-	pgrw, err := xlog.NewPgReceiver(ctx, &xlog.PgReceiveWalOpts{
-		ReceiveDirectory: opts.ReceiveDirectory,
-		Slot:             opts.Slot,
-		NoLoop:           opts.NoLoop,
-	})
-	if err != nil {
+func checkStreamingConn(streamingConn *xlog.StreamingConn) error {
+	// ensure required props
+	if streamingConn.StartupInfo == nil {
+		return fmt.Errorf("pgrw initialization: streamingConn.StartupInfo cannot be nil")
+	}
+	if streamingConn.StartupInfo.WalSegSz == 0 {
+		return fmt.Errorf("pgrw initialization: streamingConn.WalSegSz cannot be 0")
+	}
+	return nil
+}
+
+func initPgrw(ctx context.Context, streamingConn *xlog.StreamingConn, opts *ReceiveModeOpts) (xlog.PgReceiveWal, error) {
+	// ensure dirs
+	if err := os.MkdirAll(opts.ReceiveDirectory, 0o750); err != nil {
 		return nil, err
 	}
 
-	return pgrw, nil
+	// construct pgrw
+	return xlog.NewPgReceiver(ctx, streamingConn, &xlog.PgReceiveWalOpts{
+		ReceiveDirectory: opts.ReceiveDirectory,
+		Slot:             opts.Slot,
+		NoLoop:           opts.NoLoop,
+	}), nil
 }
 
 func initWalStorage(
 	loggr *slog.Logger,
 	opts *ReceiveModeOpts,
-	pgrw xlog.PgReceiveWal,
+	walSegSzUint64 uint64,
 ) (*st.VariadicStorage, error) {
-	loggr.Info("init storage")
+	loggr.Info("init wal storage")
 
-	walSegSz, err := conv.Uint64ToInt64(pgrw.WalSegSz())
+	walSegSz, err := conv.Uint64ToInt64(walSegSzUint64)
 	if err != nil {
 		return nil, fmt.Errorf("convert wal segment size: %w", err)
 	}
 
-	loggr.Info("multipart chunk part (walSegSz)", slog.Int64("sz", walSegSz))
+	loggr.Info("set multipart chunk part size",
+		slog.String("storage", "wal-stor"),
+		slog.Int64("sz", walSegSz),
+	)
 
 	stor, err := api.SetupStorage(&api.SetupStorageOpts{
 		BaseDir:         opts.ReceiveDirectory,

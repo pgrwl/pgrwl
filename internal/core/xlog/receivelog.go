@@ -353,12 +353,12 @@ func (stream *StreamCtl) processOneMsg(ctx context.Context, msg pgproto3.Backend
 
 		// Handle other commands
 	case *pgproto3.CommandComplete:
-		stream.log().Warn("received CommandComplete, treating as disconnection")
+		stream.log().Warn("received CommandComplete", slog.String("note", "treating as disconnection"))
 		return nil, nil // safe exit
 	case *pgproto3.ErrorResponse:
 		return nil, fmt.Errorf("error response from server: %s", m.Message)
 	case *pgproto3.ReadyForQuery:
-		stream.log().Warn("received ReadyForQuery, treating as disconnection")
+		stream.log().Warn("received ReadyForQuery", slog.String("note", "treating as disconnection"))
 		return nil, nil // safe exit
 	default:
 		stream.log().Warn("received unexpected message", slog.String("type", fmt.Sprintf("%T", msg)))

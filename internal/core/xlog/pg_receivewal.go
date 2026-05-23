@@ -25,6 +25,7 @@ type PgReceiveWal interface {
 	Status() *StreamStatus
 	CurrentOpenWALFileName() string
 	WalSegSz() uint64
+	Conn() *pgconn.PgConn
 }
 
 type pgReceiveWal struct {
@@ -49,35 +50,16 @@ type PgReceiveWalOpts struct {
 
 var ErrNoWalEntries = fmt.Errorf("no valid WAL segments found")
 
-func NewPgReceiver(ctx context.Context, opts *PgReceiveWalOpts) (PgReceiveWal, error) {
-	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", opts.Slot)
-	conn, err := pgconn.Connect(ctx, connStrRepl)
-	if err != nil {
-		slog.Error("cannot establish connection",
-			slog.String("component", "pgreceivewal"),
-			slog.Any("err", err),
-		)
-		return nil, err
-	}
-	startupInfo, err := GetStartupInfo(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	// ensure dirs
-	if err := os.MkdirAll(opts.ReceiveDirectory, 0o750); err != nil {
-		return nil, err
-	}
-
+func NewPgReceiver(_ context.Context, streamingConn *StreamingConn, opts *PgReceiveWalOpts) PgReceiveWal {
 	return &pgReceiveWal{
 		l:                slog.With(slog.String("component", "pgreceivewal")),
 		receiveDirectory: opts.ReceiveDirectory,
-		walSegSz:         startupInfo.WalSegSz,
-		conn:             conn,
-		connStrRepl:      connStrRepl,
+		walSegSz:         streamingConn.StartupInfo.WalSegSz,
+		conn:             streamingConn.Conn,
+		connStrRepl:      streamingConn.ConnStrRepl,
 		slotName:         opts.Slot,
 		noLoop:           opts.NoLoop,
-	}, nil
+	}
 }
 
 func (pgrw *pgReceiveWal) Run(ctx context.Context) error {
@@ -105,7 +87,7 @@ func (pgrw *pgReceiveWal) Run(ctx context.Context) error {
 			return fmt.Errorf("disconnected")
 		}
 
-		pgrw.log().Info("disconnected; waiting 5 seconds to try again")
+		pgrw.log().Info("disconnected", slog.String("note", "waiting 5 seconds to try again"))
 		time.Sleep(5 * time.Second)
 	}
 }
@@ -132,12 +114,14 @@ func (pgrw *pgReceiveWal) streamLog(ctx context.Context) error {
 
 	// 1
 	if pgrw.conn == nil {
+		pgrw.log().Info("reconnect")
 		pgrw.conn, err = pgconn.Connect(context.Background(), pgrw.connStrRepl)
 		if err != nil {
 			pgrw.log().Error("cannot establish connection", slog.Any("err", err))
 			// not a fatal error, a reconnect loop will handle it
 			return nil
 		}
+		pgrw.log().Info("reconnected")
 	}
 
 	walSegSz := pgrw.walSegSz
@@ -220,9 +204,13 @@ func (pgrw *pgReceiveWal) streamLog(ctx context.Context) error {
 	err = stream.ReceiveXlogStream(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			pgrw.log().Warn("log streaming terminated: context canceled")
+			pgrw.log().Warn("log streaming terminated",
+				slog.String("cause", "context canceled"),
+			)
 		} else {
-			pgrw.log().Error("log streaming terminated", slog.Any("err", err))
+			pgrw.log().Error("log streaming terminated",
+				slog.Any("err", err),
+			)
 		}
 	}
 
@@ -238,7 +226,9 @@ func (pgrw *pgReceiveWal) streamLog(ctx context.Context) error {
 		err := pgrw.conn.Close(ctx)
 		if err != nil {
 			// not a fatal error, just log it
-			pgrw.log().Info("could not close connection", slog.Any("err", err))
+			pgrw.log().Warn("could not close connection", slog.Any("err", err))
+		} else {
+			pgrw.log().Info("connection closed")
 		}
 		pgrw.conn = nil
 	}
@@ -331,7 +321,8 @@ func (pgrw *pgReceiveWal) findStreamingStart() (pglogrepl.LSN, uint32, error) {
 		startLSN = XLogSegNoToRecPtr(best.segNo+1, pgrw.walSegSz)
 	}
 
-	pgrw.log().Debug("found streaming start (based on WAL dir)",
+	pgrw.log().Debug("found streaming start",
+		slog.String("note", "based on WAL dir"),
 		slog.String("lsn", startLSN.String()),
 		slog.Uint64("tli", uint64(best.tli)),
 		slog.String("wal", best.basename),
@@ -341,4 +332,8 @@ func (pgrw *pgReceiveWal) findStreamingStart() (pglogrepl.LSN, uint32, error) {
 
 func (pgrw *pgReceiveWal) WalSegSz() uint64 {
 	return pgrw.walSegSz
+}
+
+func (pgrw *pgReceiveWal) Conn() *pgconn.PgConn {
+	return pgrw.conn
 }

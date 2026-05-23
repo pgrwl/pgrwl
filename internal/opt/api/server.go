@@ -47,13 +47,13 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 		defer cancel()
 
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			s.log().Error("HTTP server shutdown error", slog.Any("err", err))
+			s.log().Error("http server shutdown error", slog.Any("err", err))
 		} else {
-			s.log().Debug("HTTP server shut down")
+			s.log().Info("http server shut down")
 		}
 	}()
 
-	s.log().Info("starting HTTP server", slog.String("addr", srv.Addr))
+	s.log().Info("starting http server", slog.String("addr", srv.Addr))
 
 	// Start the server (blocking)
 	err := srv.ListenAndServe()

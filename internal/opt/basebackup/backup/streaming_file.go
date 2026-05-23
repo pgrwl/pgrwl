@@ -34,7 +34,7 @@ func NewStreamingFile(ctx context.Context, log *slog.Logger, storage st.Storage,
 	go func() {
 		defer func() {
 			_ = pr.Close()
-			log.Info("closing", slog.String("file", path))
+			log.Info("closing backup streaming file", slog.String("file", path))
 			close(sf.done)
 		}()
 
