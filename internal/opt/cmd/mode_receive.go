@@ -49,7 +49,6 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	// setup context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	ctx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
@@ -80,29 +79,27 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 		}
 	}
 
-	// print options
-	loggr.LogAttrs(ctx, slog.LevelInfo, "receiver opts", slog.Any("opts", opts))
-
 	//////////////////////////////////////////////////////////////////////
 	// Init WAL-receiver first.
 	//
 	// This remains the core component. If it cannot be initialized, receive
 	// mode must not start.
 
+	loggr.InfoContext(ctx, "receiver opts", slog.Any("opts", opts))
+
 	comp, err := initComponents(ctx, opts, loggr, cfg)
 	if err != nil {
 		return err
 	}
 
-	// setup metrics
-	initMetrics(ctx, cfg, loggr)
-
-	var wg sync.WaitGroup
+	initMetricsWhenEnabled(ctx, cfg, loggr)
 
 	//////////////////////////////////////////////////////////////////////
 	// Main WAL receiver loop.
 	//
 	// Critical component. Any error or panic is fatal.
+
+	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
@@ -208,7 +205,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 	}()
 
 	//////////////////////////////////////////////////////////////////////
-	// ArchiveSupervisor.
+	// ArchiveSupervisor. Responsible for managing wal-directory (compress/encrypt/upload).
 
 	wg.Add(1)
 	go func() {
@@ -362,7 +359,7 @@ func initComponents(
 	}, nil
 }
 
-func initMetrics(ctx context.Context, cfg *config.Config, loggr *slog.Logger) {
+func initMetricsWhenEnabled(ctx context.Context, cfg *config.Config, loggr *slog.Logger) {
 	if cfg.Metrics.Enable {
 		loggr.Debug("init prom metrics")
 		receivemetrics.InitPromMetrics(ctx)
