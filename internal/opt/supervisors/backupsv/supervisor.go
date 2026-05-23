@@ -89,7 +89,7 @@ func checkOpts(opts *BackupSupervisorOpts) error {
 	return nil
 }
 
-// RunCron starts the basebackup scheduler and blocks until ctx is canceled.
+// RunCronDaemon starts the basebackup scheduler and blocks until ctx is canceled.
 //
 // Fatal/setup errors are returned:
 //   - cron expression is invalid
