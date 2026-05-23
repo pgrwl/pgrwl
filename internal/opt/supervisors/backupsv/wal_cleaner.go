@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+
+	"github.com/pgrwl/pgrwl/internal/opt/metrics/receivemetrics"
 )
 
 type WALCleaner interface {
@@ -79,6 +81,7 @@ func (c *walCleaner) DeleteBefore(ctx context.Context, keepFromWAL string) error
 			return fmt.Errorf("delete WAL %s: %w", wal.Path, err)
 		}
 
+		receivemetrics.M.IncWALFilesDeleted()
 		deleted++
 	}
 
