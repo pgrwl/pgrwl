@@ -10,6 +10,7 @@ import (
 	"github.com/pgrwl/pgrwl/internal/core/xlog"
 	"github.com/pgrwl/pgrwl/internal/opt/api"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
+	"github.com/pgrwl/pgrwl/internal/opt/shared/retry"
 )
 
 const applicationName = "pgrwl_basebackup"
@@ -37,9 +38,15 @@ func CreateBaseBackup(ctx context.Context, opts *CreateBaseBackupOpts) (*backupd
 
 	// create connection
 	// NOTE: separate connection open on purpose, do not reuse connection that was opened for wal-streaming
-	streamingConn, err := xlog.OpenReplicationConn(ctx, loggr, applicationName)
+	streamingConn, err := retry.Do(ctx, retry.Policy{
+		// connect with retry (5s * 60 = 300s = 5m)
+		Delay:       5 * time.Second,
+		MaxAttempts: 60,
+		Logger:      loggr.With("retry", "open-conn:basebackup"),
+	}, func(ctx context.Context) (*xlog.StreamingConn, error) {
+		return xlog.OpenReplicationConn(ctx, loggr, applicationName)
+	})
 	if err != nil {
-		loggr.Error("cannot establish connection", slog.Any("err", err))
 		return nil, err
 	}
 	defer func() {

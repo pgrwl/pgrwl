@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/pgrwl/pgrwl/internal/opt/shared/retry"
 )
 
 type StreamingConn struct {
@@ -18,21 +17,11 @@ type StreamingConn struct {
 }
 
 func OpenReplicationConn(ctx context.Context, loggr *slog.Logger, applicationName string) (*StreamingConn, error) {
-	l := loggr.With(slog.String("job", "open-replication-conn"))
+	l := loggr.With(slog.String("fn", "OpenReplicationConn"))
 	l.Info("open connection")
 
 	connStrRepl := fmt.Sprintf("application_name=%s replication=yes", applicationName)
-
-	// connect with retry (5s * 60 = 300s = 5m)
-	conn, err := retry.Do(ctx, retry.Policy{
-		Delay:       5 * time.Second,
-		MaxAttempts: 60,
-		Logger: l.With(
-			slog.String("retry-operation", "connect-replication"),
-		),
-	}, func(ctx context.Context) (*pgconn.PgConn, error) {
-		return pgconn.Connect(ctx, connStrRepl)
-	})
+	conn, err := pgconn.Connect(ctx, connStrRepl)
 	if err != nil {
 		return nil, err
 	}
