@@ -93,6 +93,11 @@ x_remake_dirs() {
   x_remake_buckets
 }
 
+x_cleanup_sshd_state() {
+  chmod 0600 /var/lib/postgresql/.ssh/id_ed25519
+  ssh testuser@sshd -i /var/lib/postgresql/.ssh/id_ed25519 'sudo find /tmp -mindepth 1 -delete'
+}
+
 # start the receiver in background and store its PID
 x_start_receiver() {
   local cfg=$1

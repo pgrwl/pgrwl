@@ -37,7 +37,7 @@ x_remake_config() {
     "sftp": {
       "host": "sshd",
       "port": 22,
-      "base_dir": "/home/testuser",
+      "base_dir": "/tmp",
       "user": "testuser",
       "pkey_path": "/var/lib/postgresql/.ssh/id_ed25519"
     }
@@ -49,7 +49,7 @@ EOF
 
 x_backup_restore() {
   echo_delim "cleanup state"
-  chmod 0600 /var/lib/postgresql/.ssh/id_ed25519
+  x_cleanup_sshd_state
   x_remake_dirs
   x_remake_config
 
