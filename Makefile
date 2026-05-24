@@ -121,21 +121,41 @@ pprof-bench: ## Build debug binary, run with pprof, capture CPU+allocs profiles 
 	  done
 	nohup bash hack/scripts/switch-wals-100.sh &
 	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/profile?seconds=20" -o $(PPROF_DIR)/cpu.prof
-	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/allocs" -o $(PPROF_DIR)/allocs.prof
+	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/allocs"             -o $(PPROF_DIR)/allocs.prof
+	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/block"              -o $(PPROF_DIR)/block.prof
+	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/mutex"              -o $(PPROF_DIR)/mutex.prof
+	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/goroutine"          -o $(PPROF_DIR)/goroutine.prof
+	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/trace?seconds=10"   -o $(PPROF_DIR)/trace.out
 	-pkill -f "$(PPROF_BIN) daemon" 2>/dev/null || true
 	@echo ""
-	@echo "=== CPU top (flat) ==="
+	@echo "=== CPU - top by self time ==="
 	go tool pprof -top -nodecount=15 $(PPROF_DIR)/cpu.prof
 	@echo ""
-	@echo "=== Allocs top (bytes) ==="
+	@echo "=== CPU - top by cumulative time ==="
+	go tool pprof -top -cum -nodecount=15 $(PPROF_DIR)/cpu.prof
+	@echo ""
+	@echo "=== Allocs - top by bytes ==="
 	go tool pprof -top -nodecount=15 -alloc_space $(PPROF_DIR)/allocs.prof
 	@echo ""
-	@echo "=== Allocs top (objects) ==="
+	@echo "=== Allocs - top by object count ==="
 	go tool pprof -top -nodecount=15 -alloc_objects $(PPROF_DIR)/allocs.prof
 	@echo ""
-	@echo "profiles saved — open interactively:"
+	@echo "=== Block - top by cumulative wait time ==="
+	go tool pprof -top -cum -nodecount=15 $(PPROF_DIR)/block.prof
+	@echo ""
+	@echo "=== Mutex - top by contention delay ==="
+	go tool pprof -top -cum -nodecount=15 $(PPROF_DIR)/mutex.prof
+	@echo ""
+	@echo "=== Goroutines - top stacks by count ==="
+	go tool pprof -top -nodecount=15 $(PPROF_DIR)/goroutine.prof
+	@echo ""
+	@echo "profiles saved - open interactively:"
 	@echo "  go tool pprof -http=: $(PPROF_DIR)/cpu.prof"
 	@echo "  go tool pprof -http=: $(PPROF_DIR)/allocs.prof"
+	@echo "  go tool pprof -http=: $(PPROF_DIR)/block.prof"
+	@echo "  go tool pprof -http=: $(PPROF_DIR)/mutex.prof"
+	@echo "  go tool pprof -http=: $(PPROF_DIR)/goroutine.prof"
+	@echo "  go tool trace         $(PPROF_DIR)/trace.out"
 
 ######################################################################
 ### storage integration tests
