@@ -37,7 +37,7 @@ x_remake_config() {
     "sftp": {
       "host": "sshd",
       "port": 22,
-      "base_dir": "/tmp",
+      "base_dir": "/tmp/${TEST_NAME}",
       "user": "testuser",
       "pkey_path": "/var/lib/postgresql/.ssh/id_ed25519"
     }

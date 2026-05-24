@@ -94,8 +94,14 @@ x_remake_dirs() {
 }
 
 x_cleanup_sshd_state() {
-  chmod 0600 /var/lib/postgresql/.ssh/id_ed25519
-  ssh testuser@sshd -i /var/lib/postgresql/.ssh/id_ed25519 'sudo find /tmp -mindepth 1 -delete'
+  local key="/var/lib/postgresql/.ssh/id_ed25519"
+  chmod 0600 "$key" || true
+
+  ssh \
+    -i "$key" \
+    -o BatchMode=yes \
+    testuser@sshd \
+    "sudo find '/tmp/${TEST_NAME}' -mindepth 1 -delete" || true
 }
 
 # start the receiver in background and store its PID
