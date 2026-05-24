@@ -45,6 +45,7 @@ export PGPORT="5432"
 export PGUSER="postgres"
 export PGPASSWORD="postgres"
 export PGDATABASE="postgres"
+export PGSSLMODE="disable"
 
 # cleanup possible state
 

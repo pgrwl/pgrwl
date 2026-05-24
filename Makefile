@@ -99,6 +99,45 @@ pprof1: ## Collect allocs, heap, CPU, and trace profiles
 	go tool pprof -web http://127.0.0.1:7070/debug/pprof/profile?seconds=10
 	curl -s http://127.0.0.1:7070/debug/pprof/trace\?seconds\=10 | go tool trace /dev/stdin
 
+PPROF_DIR     := pprof
+PPROF_PORT    := 7171
+PPROF_CFG     := /tmp/pgrwl-pprof.json
+PPROF_WAL_DIR := /tmp/pgrwl-pprof-wal
+PPROF_SLOT    := pgrwl_pprof
+PPROF_BIN     := bin/pgrwl-pprof
+
+.PHONY: pprof-bench
+pprof-bench: ## Build debug binary, run with pprof, capture CPU+allocs profiles under pprof/
+	@mkdir -p $(PPROF_DIR) $(PPROF_WAL_DIR)
+	CGO_ENABLED=0 go build -o $(PPROF_BIN) cmd/pgrwl/main.go
+	@printf '{"main":{"listen_port":$(PPROF_PORT),"directory":"$(PPROF_WAL_DIR)"},"receiver":{"slot":"$(PPROF_SLOT)"},"log":{"level":"warn","format":"text"},"devconfig":{"pprof":{"enable":true}},"backup":{"cron":"0 3 * * *"}}\n' > $(PPROF_CFG)
+	psql -U postgres -c "SELECT pg_drop_replication_slot('$(PPROF_SLOT)')" 2>/dev/null || true
+	psql -U postgres -c "SELECT pg_create_physical_replication_slot('$(PPROF_SLOT)')"
+	PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres \
+	  nohup $(PPROF_BIN) daemon -c $(PPROF_CFG) -m receive > /tmp/pgrwl-pprof.log 2>&1 &
+	@echo "waiting for pgrwl pprof endpoint..." && \
+	  for i in $$(seq 1 30); do \
+	    curl -sf http://127.0.0.1:$(PPROF_PORT)/debug/pprof/ > /dev/null 2>&1 && break; \
+	    sleep 1; \
+	  done
+	nohup bash hack/scripts/switch-wals-100.sh &
+	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/profile?seconds=20" -o $(PPROF_DIR)/cpu.prof
+	curl -s "http://127.0.0.1:$(PPROF_PORT)/debug/pprof/allocs" -o $(PPROF_DIR)/allocs.prof
+	-pkill -f "$(PPROF_BIN) daemon" 2>/dev/null || true
+	@echo ""
+	@echo "=== CPU top (flat) ==="
+	go tool pprof -top -nodecount=15 $(PPROF_DIR)/cpu.prof
+	@echo ""
+	@echo "=== Allocs top (bytes) ==="
+	go tool pprof -top -nodecount=15 -alloc_space $(PPROF_DIR)/allocs.prof
+	@echo ""
+	@echo "=== Allocs top (objects) ==="
+	go tool pprof -top -nodecount=15 -alloc_objects $(PPROF_DIR)/allocs.prof
+	@echo ""
+	@echo "profiles saved — open interactively:"
+	@echo "  go tool pprof -http=: $(PPROF_DIR)/cpu.prof"
+	@echo "  go tool pprof -http=: $(PPROF_DIR)/allocs.prof"
+
 ######################################################################
 ### storage integration tests
 ######################################################################

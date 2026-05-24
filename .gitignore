@@ -17,6 +17,7 @@ bin/
 coverage.txt
 __debug_bin*
 pprof/
+*.prof
 nohup.out
 
 # pgrwl related stage dirs
