@@ -101,7 +101,7 @@ pprof1: ## Collect allocs, heap, CPU, and trace profiles
 
 PPROF_DIR     := pprof
 PPROF_PORT    := 7171
-PPROF_CFG     := /tmp/pgrwl-pprof.json
+PPROF_CFG     := hack/configs/pprof-bench.yml
 PPROF_WAL_DIR := /tmp/pgrwl-pprof-wal
 PPROF_SLOT    := pgrwl_pprof
 PPROF_BIN     := bin/pgrwl-pprof
@@ -110,7 +110,6 @@ PPROF_BIN     := bin/pgrwl-pprof
 pprof-bench: ## Build debug binary, run with pprof, capture CPU+allocs profiles under pprof/
 	@mkdir -p $(PPROF_DIR) $(PPROF_WAL_DIR)
 	CGO_ENABLED=0 go build -o $(PPROF_BIN) cmd/pgrwl/main.go
-	@printf '{"main":{"listen_port":$(PPROF_PORT),"directory":"$(PPROF_WAL_DIR)"},"receiver":{"slot":"$(PPROF_SLOT)"},"log":{"level":"warn","format":"text"},"devconfig":{"pprof":{"enable":true}},"backup":{"cron":"0 3 * * *"}}\n' > $(PPROF_CFG)
 	psql -U postgres -c "SELECT pg_drop_replication_slot('$(PPROF_SLOT)')" 2>/dev/null || true
 	psql -U postgres -c "SELECT pg_create_physical_replication_slot('$(PPROF_SLOT)')"
 	PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres \
