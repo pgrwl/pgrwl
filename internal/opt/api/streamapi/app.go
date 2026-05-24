@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
+	"runtime"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -69,6 +70,8 @@ func initOptionalHandlers(cfg *config.Config, mux *http.ServeMux, l *slog.Logger
 
 	if cfg.DevConfig.Pprof.Enable {
 		l.Debug("enable pprof endpoints")
+		runtime.SetBlockProfileRate(1)
+		runtime.SetMutexProfileFraction(1)
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)

@@ -1,0 +1,18 @@
+---
+main:
+  listen_port: 7171
+  directory: /tmp/pgrwl-pprof-wal
+
+receiver:
+  slot: pgrwl_pprof
+
+log:
+  level: warn
+  format: text
+
+devconfig:
+  pprof:
+    enable: true
+
+backup:
+  cron: "0 3 * * *"

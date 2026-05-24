@@ -45,6 +45,7 @@ export PGPORT="5432"
 export PGUSER="postgres"
 export PGPASSWORD="postgres"
 export PGDATABASE="postgres"
+export PGSSLMODE="disable"
 
 # cleanup possible state
 
@@ -91,6 +92,17 @@ x_remake_dirs() {
 
   # recreate bucket
   x_remake_buckets
+}
+
+x_cleanup_sshd_state() {
+  local key="/var/lib/postgresql/.ssh/id_ed25519"
+  chmod 0600 "$key" || true
+
+  ssh \
+    -i "$key" \
+    -o BatchMode=yes \
+    testuser@sshd \
+    "sudo find '/tmp/${TEST_NAME}' -mindepth 1 -delete" || true
 }
 
 # start the receiver in background and store its PID
