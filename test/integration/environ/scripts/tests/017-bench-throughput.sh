@@ -30,6 +30,30 @@ make_pgrwl_cfg() {
 EOF
 }
 
+x_wait_flush_lsn() {
+  local app="$1"
+  local target_lsn="$2"
+
+  for i in {1..120}; do
+    local ok
+    ok=$(psql -At -U postgres -c "
+      SELECT coalesce(
+        (SELECT flush_lsn >= '${target_lsn}'::pg_lsn
+         FROM pg_stat_replication
+         WHERE application_name = '${app}'
+         LIMIT 1),
+        false
+      )")
+    if [[ "$ok" == "t" ]]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  echo "receiver ${app} failed to reach ${target_lsn}" >&2
+  return 1
+}
+
 dir_bytes() {
   du -sb "$1" | awk '{print $1}'
 }
@@ -66,7 +90,8 @@ x_start_pg_receivewal
 
 t0=$(x_now_epoch_ms)
 x_generate_wal "$WAL_SWITCHES"
-xpg_wait_for_slot "pg_receivewal"
+target_lsn=$(psql -At -U postgres -c "SELECT pg_current_wal_lsn()")
+x_wait_flush_lsn "pg_receivewal" "$target_lsn"
 t1=$(x_now_epoch_ms)
 
 pgrw_bytes=$(dir_bytes "$PG_RECEIVEWAL_WAL_PATH")
@@ -84,7 +109,8 @@ x_start_receiver "$BENCH_PGRWL_CFG"
 
 t0=$(x_now_epoch_ms)
 x_generate_wal "$WAL_SWITCHES"
-xpg_wait_for_slot "$BENCH_PGRWL_SLOT"
+target_lsn=$(psql -At -U postgres -c "SELECT pg_current_wal_lsn()")
+x_wait_flush_lsn "$BENCH_PGRWL_SLOT" "$target_lsn"
 t1=$(x_now_epoch_ms)
 
 pgrwl_bytes=$(dir_bytes "$WAL_PATH")
