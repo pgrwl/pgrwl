@@ -25,7 +25,7 @@ func writeFile(t *testing.T, l *localStorage, rel, content string) {
 	t.Helper()
 	full := filepath.Join(l.baseDir, filepath.FromSlash(rel))
 	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o750))
-	require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+	require.NoError(t, os.WriteFile(full, []byte(content), 0o600))
 }
 
 // -----------------------------------------------------------------------------
