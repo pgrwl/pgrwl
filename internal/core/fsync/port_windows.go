@@ -11,6 +11,10 @@ func Fsync(f *os.File) error {
 	return syscall.FlushFileBuffers(syscall.Handle(f.Fd()))
 }
 
+func FsyncFd(fd int) error {
+	return syscall.FlushFileBuffers(syscall.Handle(fd))
+}
+
 // FsyncFname fsyncs path contents and the parent directory contents.
 //
 //nolint:revive
