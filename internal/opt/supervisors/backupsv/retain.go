@@ -92,9 +92,9 @@ func backupsOlderThanAnchor(backups []recoveryWindowBackup, anchor *recoveryWind
 func normalizeWALFilename(path string) (name string, history, ok bool) {
 	base := filepath.Base(path)
 
-	// ListInfoRaw returns backend/raw paths, so compression/encryption suffixes
-	// may still be present. Strip known transformation suffixes to get the
-	// underlying PostgreSQL WAL filename.
+	// ListInfoRaw returns backend/raw paths, so transformation suffixes and the
+	// checksum separator ("--{sha256hex}") may still be present. Strip them all
+	// to recover the underlying PostgreSQL WAL filename.
 	for {
 		old := base
 
@@ -106,6 +106,11 @@ func normalizeWALFilename(path string) (name string, history, ok bool) {
 		if old == base {
 			break
 		}
+	}
+
+	// Strip "--{sha256hex}" checksum suffix if present.
+	if idx := strings.LastIndex(base, "--"); idx >= 0 {
+		base = base[:idx]
 	}
 
 	if strings.HasSuffix(base, ".history") {

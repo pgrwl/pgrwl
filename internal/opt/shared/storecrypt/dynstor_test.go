@@ -529,3 +529,155 @@ func TestVariadicStorage_ListInfo_RewritesPath(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{"p/a", "p/c"}, paths)
 }
+
+// -----------------------------------------------------------------------------
+// ListPrefix
+// -----------------------------------------------------------------------------
+
+func TestVariadicStorage_ListPrefix_StripsCodecExtension(t *testing.T) {
+	ctx := context.Background()
+
+	aes := aesgcm.NewChunkedGCMCrypter("password")
+	gzipPair := &CodecPair{
+		Compressor:   codec.GzipCompressor{},
+		Decompressor: codec.GzipDecompressor{},
+	}
+	alg := Algorithms{Gzip: gzipPair, AES: aes}
+
+	mem := NewInMemoryStorage()
+	// Store with the full physical name including codec extension.
+	mem.Files["seg--abc.gz.aes"] = []byte("1")
+	mem.Files["seg--def.gz.aes"] = []byte("2")
+	mem.Files["other--xyz.gz.aes"] = []byte("3")
+
+	vs, err := NewVariadicStorage(mem, alg, ".gz.aes")
+	require.NoError(t, err)
+
+	infos, err := vs.ListPrefix(ctx, "seg--")
+	require.NoError(t, err)
+
+	var paths []string
+	for _, fi := range infos {
+		paths = append(paths, fi.Path)
+	}
+	assert.ElementsMatch(t, []string{"seg--abc", "seg--def"}, paths)
+}
+
+func TestVariadicStorage_ListPrefix_PlainBackend_NoExtension(t *testing.T) {
+	ctx := context.Background()
+
+	mem := NewInMemoryStorage()
+	mem.Files["seg--abc"] = []byte("x")
+	mem.Files["seg--def"] = []byte("y")
+
+	vs, err := NewVariadicStorage(mem, Algorithms{}, "")
+	require.NoError(t, err)
+
+	infos, err := vs.ListPrefix(ctx, "seg--")
+	require.NoError(t, err)
+
+	var paths []string
+	for _, fi := range infos {
+		paths = append(paths, fi.Path)
+	}
+	assert.ElementsMatch(t, []string{"seg--abc", "seg--def"}, paths)
+}
+
+func TestVariadicStorage_ListPrefix_NoMatch_ReturnsNil(t *testing.T) {
+	ctx := context.Background()
+
+	mem := NewInMemoryStorage()
+	mem.Files["seg--abc.gz"] = []byte("1")
+
+	gzipPair := &CodecPair{
+		Compressor:   codec.GzipCompressor{},
+		Decompressor: codec.GzipDecompressor{},
+	}
+	vs, err := NewVariadicStorage(mem, Algorithms{Gzip: gzipPair}, ".gz")
+	require.NoError(t, err)
+
+	infos, err := vs.ListPrefix(ctx, "missing--")
+	require.NoError(t, err)
+	assert.Nil(t, infos)
+}
+
+func TestVariadicStorage_ListPrefix_WithDirectory_PreservesPath(t *testing.T) {
+	ctx := context.Background()
+
+	gzipPair := &CodecPair{
+		Compressor:   codec.GzipCompressor{},
+		Decompressor: codec.GzipDecompressor{},
+	}
+	alg := Algorithms{Gzip: gzipPair}
+
+	mem := NewInMemoryStorage()
+	mem.Files["wal/000000010000000000000001--abc.gz"] = []byte("a")
+	mem.Files["wal/000000010000000000000001--def.gz"] = []byte("b")
+	mem.Files["wal/000000010000000000000002--xyz.gz"] = []byte("c")
+
+	vs, err := NewVariadicStorage(mem, alg, ".gz")
+	require.NoError(t, err)
+
+	infos, err := vs.ListPrefix(ctx, "wal/000000010000000000000001--")
+	require.NoError(t, err)
+
+	var paths []string
+	for _, fi := range infos {
+		paths = append(paths, fi.Path)
+	}
+	assert.ElementsMatch(t, []string{
+		"wal/000000010000000000000001--abc",
+		"wal/000000010000000000000001--def",
+	}, paths)
+}
+
+func TestVariadicStorage_ListPrefix_MultipleExtensionVariants(t *testing.T) {
+	// If the same logical prefix has objects with different codec extensions,
+	// ListPrefix must strip each correctly.
+	ctx := context.Background()
+
+	aes := aesgcm.NewChunkedGCMCrypter("password")
+	gzipPair := &CodecPair{
+		Compressor:   codec.GzipCompressor{},
+		Decompressor: codec.GzipDecompressor{},
+	}
+	zstdPair := &CodecPair{
+		Compressor:   codec.ZstdCompressor{},
+		Decompressor: codec.ZstdDecompressor{},
+	}
+	alg := Algorithms{Gzip: gzipPair, Zstd: zstdPair, AES: aes}
+
+	mem := NewInMemoryStorage()
+	mem.Files["seg--aaa.gz.aes"] = []byte("1")
+	mem.Files["seg--bbb.zst"] = []byte("2")
+	mem.Files["seg--ccc"] = []byte("3")
+
+	vs, err := NewVariadicStorage(mem, alg, ".gz.aes")
+	require.NoError(t, err)
+
+	infos, err := vs.ListPrefix(ctx, "seg--")
+	require.NoError(t, err)
+
+	var paths []string
+	for _, fi := range infos {
+		paths = append(paths, fi.Path)
+	}
+	assert.ElementsMatch(t, []string{"seg--aaa", "seg--bbb", "seg--ccc"}, paths)
+}
+
+func TestVariadicStorage_ListPrefix_DelegatesToBackendWithExactPrefix(t *testing.T) {
+	// Verify that the exact prefix string is forwarded to the backend unchanged.
+	ctx := context.Background()
+
+	mem := NewInMemoryStorage()
+	mem.Files["prefix-with-special.chars--abc"] = []byte("x")
+	mem.Files["prefix-with-special.chars--def"] = []byte("y")
+	mem.Files["unrelated"] = []byte("z")
+
+	vs, err := NewVariadicStorage(mem, Algorithms{}, "")
+	require.NoError(t, err)
+
+	infos, err := vs.ListPrefix(ctx, "prefix-with-special.chars--")
+	require.NoError(t, err)
+	assert.Len(t, infos, 2)
+}
