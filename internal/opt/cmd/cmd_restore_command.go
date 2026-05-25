@@ -47,8 +47,12 @@ func ExecRestoreCommand(walFileName, walFilePath string, opts *RestoreCommandOpt
 	if err != nil {
 		return err
 	}
-	defer fileDst.Close()
 
-	_, err = io.Copy(fileDst, resp.Body)
-	return err
+	if _, err = io.Copy(fileDst, resp.Body); err != nil {
+		_ = fileDst.Close()
+		_ = os.Remove(walFilePath)
+		return err
+	}
+
+	return fileDst.Close()
 }
