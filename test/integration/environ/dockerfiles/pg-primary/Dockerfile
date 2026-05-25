@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       curl gnupg lsb-release ca-certificates \
-      openssh-server sudo vim net-tools telnet mc python3 \
+      openssh-server sudo vim net-tools telnet mc python3 strace \
       postgresql-common tzdata; \
     # pg
     YES=true /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh; \
