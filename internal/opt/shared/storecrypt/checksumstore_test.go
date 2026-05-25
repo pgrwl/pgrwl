@@ -290,6 +290,7 @@ func TestChecksumStorage_List_StripsHashSuffix(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, infos, len(segs))
 
+	//nolint:prealloc
 	var paths []string
 	for _, fi := range infos {
 		paths = append(paths, fi.Path)
@@ -309,6 +310,7 @@ func TestChecksumStorage_List_PreservesLegacyNames(t *testing.T) {
 	infos, err := cs.List(ctx, "dir")
 	require.NoError(t, err)
 
+	//nolint:prealloc
 	var paths []string
 	for _, fi := range infos {
 		paths = append(paths, fi.Path)

@@ -202,6 +202,7 @@ func TestInMemoryStorage_ListPrefix_NoTrailingSlashAdded(t *testing.T) {
 	infos, err := s.ListPrefix(ctx, "seg")
 	require.NoError(t, err)
 
+	//nolint:prealloc
 	var paths []string
 	for _, fi := range infos {
 		paths = append(paths, fi.Path)

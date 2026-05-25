@@ -16,6 +16,7 @@ func newLocalStorage(t *testing.T) *localStorage {
 	dir := t.TempDir()
 	st, err := NewLocal(&LocalStorageOpts{BaseDir: dir})
 	require.NoError(t, err)
+	//nolint:errcheck
 	return st.(*localStorage)
 }
 

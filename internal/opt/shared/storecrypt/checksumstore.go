@@ -140,8 +140,8 @@ func (cs *ChecksumStorage) resolve(ctx context.Context, logicalName string) (phy
 	}
 	for _, fi := range infos {
 		if strings.HasPrefix(fi.Path, prefix) {
-			hash := strings.TrimPrefix(fi.Path, prefix)
-			return fi.Path, hash, nil
+			hashStored := strings.TrimPrefix(fi.Path, prefix)
+			return fi.Path, hashStored, nil
 		}
 	}
 	// Fallback: plain file stored without a checksum.

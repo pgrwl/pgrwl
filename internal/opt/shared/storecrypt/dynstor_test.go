@@ -556,6 +556,7 @@ func TestVariadicStorage_ListPrefix_StripsCodecExtension(t *testing.T) {
 	infos, err := vs.ListPrefix(ctx, "seg--")
 	require.NoError(t, err)
 
+	//nolint:prealloc
 	var paths []string
 	for _, fi := range infos {
 		paths = append(paths, fi.Path)
@@ -576,6 +577,7 @@ func TestVariadicStorage_ListPrefix_PlainBackend_NoExtension(t *testing.T) {
 	infos, err := vs.ListPrefix(ctx, "seg--")
 	require.NoError(t, err)
 
+	//nolint:prealloc
 	var paths []string
 	for _, fi := range infos {
 		paths = append(paths, fi.Path)
@@ -621,6 +623,7 @@ func TestVariadicStorage_ListPrefix_WithDirectory_PreservesPath(t *testing.T) {
 	infos, err := vs.ListPrefix(ctx, "wal/000000010000000000000001--")
 	require.NoError(t, err)
 
+	//nolint:prealloc
 	var paths []string
 	for _, fi := range infos {
 		paths = append(paths, fi.Path)
@@ -658,6 +661,7 @@ func TestVariadicStorage_ListPrefix_MultipleExtensionVariants(t *testing.T) {
 	infos, err := vs.ListPrefix(ctx, "seg--")
 	require.NoError(t, err)
 
+	//nolint:prealloc
 	var paths []string
 	for _, fi := range infos {
 		paths = append(paths, fi.Path)
