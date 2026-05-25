@@ -563,6 +563,72 @@ func TestStorage_DeleteAllBulk_DoesNotDeletePrefixCollisions(t *testing.T) {
 	}
 }
 
+func TestStorage_ListPrefix(t *testing.T) {
+	ctx := context.TODO()
+	storages := initStoragesT(t, t.Name())
+
+	for name, store := range storages {
+		t.Run(name, func(t *testing.T) {
+			// Store three files: two share the "wal/seg--" prefix, one does not.
+			require.NoError(t, store.Put(ctx, "wal/seg--abc", bytes.NewReader([]byte("a"))))
+			require.NoError(t, store.Put(ctx, "wal/seg--def", bytes.NewReader([]byte("b"))))
+			require.NoError(t, store.Put(ctx, "wal/other--xyz", bytes.NewReader([]byte("c"))))
+
+			infos, err := store.ListPrefix(ctx, "wal/seg--")
+			require.NoError(t, err, "[%s] ListPrefix failed", name)
+
+			paths := fileInfoToStrList(infos)
+			assert.ElementsMatch(t, []string{"wal/seg--abc", "wal/seg--def"}, paths,
+				"[%s] unexpected ListPrefix result", name)
+		})
+	}
+}
+
+func TestStorage_ListPrefix_EmptyWhenNoMatch(t *testing.T) {
+	ctx := context.TODO()
+	storages := initStoragesT(t, t.Name())
+
+	for name, store := range storages {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, store.Put(ctx, "seg--abc", bytes.NewReader([]byte("x"))))
+
+			infos, err := store.ListPrefix(ctx, "nomatch--")
+			require.NoError(t, err, "[%s] ListPrefix failed", name)
+			assert.Empty(t, infos, "[%s] expected empty result for non-matching prefix", name)
+		})
+	}
+}
+
+func TestStorage_ListPrefix_DoesNotAddTrailingSlash(t *testing.T) {
+	// ListPrefix("seg") must match "seg001" and "seg--hash" (no "/" boundary),
+	// unlike List("seg") which appends "/" and only matches "seg/child".
+	ctx := context.TODO()
+	storages := initStoragesT(t, t.Name())
+
+	for name, store := range storages {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, store.Put(ctx, "seg001", bytes.NewReader([]byte("a"))))
+			require.NoError(t, store.Put(ctx, "seg002", bytes.NewReader([]byte("b"))))
+			require.NoError(t, store.Put(ctx, "seg/child", bytes.NewReader([]byte("c"))))
+			require.NoError(t, store.Put(ctx, "other", bytes.NewReader([]byte("d"))))
+
+			// ListPrefix - prefix without "/" matches any key starting with "seg".
+			infos, err := store.ListPrefix(ctx, "seg")
+			require.NoError(t, err, "[%s] ListPrefix failed", name)
+			paths := fileInfoToStrList(infos)
+			assert.ElementsMatch(t, []string{"seg001", "seg002", "seg/child"}, paths,
+				"[%s] ListPrefix should not add trailing slash", name)
+
+			// List("seg") - appends "/" internally, so only "seg/child" is returned.
+			listed, err := store.List(ctx, "seg")
+			require.NoError(t, err, "[%s] List failed", name)
+			listedPaths := fileInfoToStrList(listed)
+			assert.ElementsMatch(t, []string{"seg/child"}, listedPaths,
+				"[%s] List should scope to seg/ prefix", name)
+		})
+	}
+}
+
 func TestStorage_List_DoesNotReturnPrefixSibling(t *testing.T) {
 	ctx := context.TODO()
 	storages := initStoragesT(t, t.Name())
