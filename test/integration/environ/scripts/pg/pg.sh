@@ -144,6 +144,10 @@ xpg_wait_for_slot() {
     return 1
 }
 
+xpg_current_lsn() {
+    psql -At -U postgres -c "SELECT pg_current_wal_lsn()"
+}
+
 xpg_config() {
   cat <<'EOF' >"${PG_HBA}"
 local all         all     trust

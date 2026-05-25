@@ -25,6 +25,53 @@ x_remake_config() {
 EOF
 }
 
+x_wait_for_slots_lsn() {
+    local target_lsn="$1"
+    shift
+
+    echo_delim "waiting for slots to reach ${target_lsn}: $*"
+
+    for i in {1..120}; do
+        local all_ok="true"
+
+        for slot in "$@"; do
+            local confirmed
+            confirmed=$(
+                psql -At -U postgres -c \
+                    "SELECT COALESCE(restart_lsn::text, '0/0')
+                     FROM pg_replication_slots
+                     WHERE slot_name = '${slot}'"
+            )
+
+            if [[ -z "$confirmed" ]]; then
+                confirmed="0/0"
+            fi
+
+            local ok
+            ok=$(
+                psql -At -U postgres -c \
+                    "SELECT '${confirmed}'::pg_lsn >= '${target_lsn}'::pg_lsn"
+            )
+
+            if [[ "$ok" != "t" ]]; then
+                all_ok="false"
+                echo "slot ${slot}: ${confirmed} < ${target_lsn}"
+                break
+            fi
+        done
+
+        if [[ "$all_ok" = "true" ]]; then
+            echo "all slots caught up to ${target_lsn}"
+            return 0
+        fi
+
+        sleep 0.25
+    done
+
+    echo "slots failed to catch up to ${target_lsn} in time"
+    return 1
+}
+
 x_backup_restore() {
   echo_delim "cleanup state"
   x_remake_dirs
@@ -52,7 +99,7 @@ x_backup_restore() {
     --verbose
 
   # trying to write ~100 of WAL files as quick as possible
-  x_generate_wal 100
+  x_generate_wal 350
 
   # (to prevent test-races just wait while slots are in sync)
   #
@@ -61,16 +108,17 @@ x_backup_restore() {
   # renamed '/tmp/wal-archive/000000010000000000000067.partial' -> '/tmp/wal-archive/000000010000000000000067'
   # renamed '/tmp/wal-archive-pg_receivewal/000000010000000000000066.partial' -> '/tmp/wal-archive-pg_receivewal/000000010000000000000066'
   #
-  xpg_wait_for_slot "pgrwl_v5"
-  xpg_wait_for_slot "pg_receivewal"
+  target_lsn="$(xpg_current_lsn)"
+  x_wait_for_slots_lsn "$target_lsn" "pgrwl_v5" "pg_receivewal"
+
+  x_stop_receiver
+  x_stop_pg_receivewal
 
   # remember the state
   pg_dumpall -f "/tmp/pgdumpall-before" --restrict-key=0
 
   # stop cluster, cleanup data
   echo_delim "teardown"
-  x_stop_receiver
-  x_stop_pg_receivewal
   xpg_teardown
 
   # restore from backup
