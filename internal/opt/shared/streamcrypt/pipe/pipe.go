@@ -52,13 +52,23 @@ func CompressAndEncryptOptional(
 			return
 		}
 
-		// Properly close in reverse order
+		// Properly close in reverse order; propagate errors so the pipe
+		// reader sees them rather than silently getting a truncated stream.
 		if compWriter != nil {
-			_ = compWriter.Flush()
-			_ = compWriter.Close()
+			if err := compWriter.Flush(); err != nil {
+				_ = pw.CloseWithError(fmt.Errorf("flush compressor: %w", err))
+				return
+			}
+			if err := compWriter.Close(); err != nil {
+				_ = pw.CloseWithError(fmt.Errorf("close compressor: %w", err))
+				return
+			}
 		}
 		if encWriter != nil {
-			_ = encWriter.Close()
+			if err := encWriter.Close(); err != nil {
+				_ = pw.CloseWithError(fmt.Errorf("close encryptor: %w", err))
+				return
+			}
 		}
 	}()
 
