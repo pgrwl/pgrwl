@@ -140,6 +140,96 @@ func TestInMemoryStorage_ListTopLevelDirs(t *testing.T) {
 	assert.Empty(t, result3)
 }
 
+// -----------------------------------------------------------------------------
+// ListPrefix
+// -----------------------------------------------------------------------------
+
+func TestInMemoryStorage_ListPrefix_BasicMatch(t *testing.T) {
+	ctx := context.Background()
+	s := NewInMemoryStorage()
+
+	s.Files["seg--aaa"] = []byte("1")
+	s.Files["seg--bbb"] = []byte("22")
+	s.Files["other--ccc"] = []byte("333")
+
+	infos, err := s.ListPrefix(ctx, "seg--")
+	require.NoError(t, err)
+
+	paths := make(map[string]int64)
+	for _, fi := range infos {
+		paths[fi.Path] = fi.Size
+	}
+
+	assert.Len(t, paths, 2)
+	assert.Equal(t, int64(1), paths["seg--aaa"])
+	assert.Equal(t, int64(2), paths["seg--bbb"])
+}
+
+func TestInMemoryStorage_ListPrefix_NoMatch_ReturnsNil(t *testing.T) {
+	ctx := context.Background()
+	s := NewInMemoryStorage()
+
+	s.Files["seg--aaa"] = []byte("x")
+
+	infos, err := s.ListPrefix(ctx, "xyz--")
+	require.NoError(t, err)
+	assert.Nil(t, infos)
+}
+
+func TestInMemoryStorage_ListPrefix_EmptyPrefix_MatchesAll(t *testing.T) {
+	ctx := context.Background()
+	s := NewInMemoryStorage()
+
+	s.Files["a"] = []byte("1")
+	s.Files["b/c"] = []byte("2")
+
+	infos, err := s.ListPrefix(ctx, "")
+	require.NoError(t, err)
+	assert.Len(t, infos, 2)
+}
+
+func TestInMemoryStorage_ListPrefix_NoTrailingSlashAdded(t *testing.T) {
+	// Unlike List, ListPrefix must NOT append "/" - so "seg" matches "seg001"
+	// and "seg--hash", not just "seg/child".
+	ctx := context.Background()
+	s := NewInMemoryStorage()
+
+	s.Files["seg001"] = []byte("a")
+	s.Files["seg002"] = []byte("b")
+	s.Files["seg/child"] = []byte("c")
+	s.Files["other"] = []byte("d")
+
+	infos, err := s.ListPrefix(ctx, "seg")
+	require.NoError(t, err)
+
+	//nolint:prealloc
+	var paths []string
+	for _, fi := range infos {
+		paths = append(paths, fi.Path)
+	}
+	assert.ElementsMatch(t, []string{"seg001", "seg002", "seg/child"}, paths)
+}
+
+func TestInMemoryStorage_ListPrefix_ExactKeyMatchesItself(t *testing.T) {
+	ctx := context.Background()
+	s := NewInMemoryStorage()
+	s.Files["exact"] = []byte("hello")
+
+	infos, err := s.ListPrefix(ctx, "exact")
+	require.NoError(t, err)
+
+	require.Len(t, infos, 1)
+	assert.Equal(t, "exact", infos[0].Path)
+	assert.Equal(t, int64(5), infos[0].Size)
+}
+
+func TestInMemoryStorage_ListPrefix_EmptyStorage_ReturnsNil(t *testing.T) {
+	ctx := context.Background()
+	infos, err := NewInMemoryStorage().ListPrefix(ctx, "anything")
+	require.NoError(t, err)
+	assert.Nil(t, infos)
+}
+
 // New tests below
 
 func TestInMemoryStorage_DeleteDir(t *testing.T) {

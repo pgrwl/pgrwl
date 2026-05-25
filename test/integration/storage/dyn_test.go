@@ -352,6 +352,68 @@ func TestDynStorage_Rename_AllVariantsLogical(t *testing.T) {
 	}
 }
 
+func TestDynStorage_ListPrefix_StripsCodecExtension(t *testing.T) {
+	// Verify that VariadicStorage.ListPrefix strips the codec extension from
+	// each returned path, regardless of which writeExt was used.
+	ctx := context.TODO()
+	storages := initDynStoragesSameBackendT(t, t.Name())
+
+	backend := storages["plain"].Backend
+	require.NoError(t, deleteAll(ctx, backend, ""), "initial cleanup")
+
+	const prefix = "wal/seg--"
+	logicals := []string{
+		"wal/seg--aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00001",
+		"wal/seg--aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00002",
+	}
+	content := []byte("wal segment data")
+
+	for writeExt, writer := range storages {
+		t.Run("writeExt="+writeExt, func(t *testing.T) {
+			require.NoError(t, deleteAll(ctx, backend, ""), "cleanup before sub-test")
+
+			for _, logical := range logicals {
+				require.NoError(t, writer.Put(ctx, logical, bytes.NewReader(content)))
+			}
+
+			infos, err := writer.ListPrefix(ctx, prefix)
+			require.NoError(t, err, "[%s] ListPrefix failed", writeExt)
+
+			paths := make([]string, 0, len(infos))
+			for _, fi := range infos {
+				paths = append(paths, fi.Path)
+			}
+			assert.ElementsMatch(t, logicals, paths,
+				"[%s] ListPrefix should return logical names with codec extension stripped", writeExt)
+		})
+	}
+}
+
+func TestDynStorage_ListPrefix_SameBackend_CrossWriter(t *testing.T) {
+	// Files written by one VariadicStorage variant must be discovered by
+	// ListPrefix called on a different variant - all share the same backend.
+	ctx := context.TODO()
+	storages := initDynStoragesSameBackendT(t, t.Name())
+
+	backend := storages["plain"].Backend
+	require.NoError(t, deleteAll(ctx, backend, ""), "initial cleanup")
+
+	// Write via gz.aes, then call ListPrefix via plain.
+	writer := storages["gz.aes"]
+	reader := storages["plain"]
+
+	require.NoError(t, writer.Put(ctx, "seg--hash001", bytes.NewReader([]byte("a"))))
+	require.NoError(t, writer.Put(ctx, "seg--hash002", bytes.NewReader([]byte("b"))))
+	require.NoError(t, writer.Put(ctx, "other--hash003", bytes.NewReader([]byte("c"))))
+
+	infos, err := reader.ListPrefix(ctx, "seg--")
+	require.NoError(t, err)
+
+	paths := fileInfoToStrList(infos)
+	assert.ElementsMatch(t, []string{"seg--hash001", "seg--hash002"}, paths,
+		"ListPrefix via plain reader should see files written by gz.aes writer")
+}
+
 func TestDynStorage_Rename_WithExplicitExtension_MultiVariant(t *testing.T) {
 	ctx := context.TODO()
 	storages := initDynStoragesSameBackendT(t, t.Name())

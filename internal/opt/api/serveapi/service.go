@@ -22,7 +22,7 @@ type Service interface {
 type svc struct {
 	l       *slog.Logger
 	baseDir string
-	storage *st.VariadicStorage
+	storage st.Storage
 }
 
 var _ Service = &svc{}
