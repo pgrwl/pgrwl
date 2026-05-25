@@ -46,5 +46,9 @@ func (c *Handler) WalFileDownloadHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	_, _ = w.Write(data)
+	_, err = w.Write(data)
+	if err != nil {
+		http.Error(w, "cannot write file-data to response", http.StatusInternalServerError)
+		return
+	}
 }
