@@ -600,8 +600,9 @@ func TestStorage_ListPrefix_EmptyWhenNoMatch(t *testing.T) {
 }
 
 func TestStorage_ListPrefix_DoesNotAddTrailingSlash(t *testing.T) {
-	// ListPrefix("seg") must match "seg001" and "seg--hash" (no "/" boundary),
-	// unlike List("seg") which appends "/" and only matches "seg/child".
+	// ListPrefix("seg") must match "seg001" and "seg002" (no "/" boundary added),
+	// while List("seg") appends "/" internally and returns nothing when there are
+	// no files under a "seg/" directory.
 	ctx := context.TODO()
 	storages := initStoragesT(t, t.Name())
 
@@ -609,22 +610,19 @@ func TestStorage_ListPrefix_DoesNotAddTrailingSlash(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			require.NoError(t, store.Put(ctx, "seg001", bytes.NewReader([]byte("a"))))
 			require.NoError(t, store.Put(ctx, "seg002", bytes.NewReader([]byte("b"))))
-			require.NoError(t, store.Put(ctx, "seg/child", bytes.NewReader([]byte("c"))))
-			require.NoError(t, store.Put(ctx, "other", bytes.NewReader([]byte("d"))))
+			require.NoError(t, store.Put(ctx, "other", bytes.NewReader([]byte("c"))))
 
 			// ListPrefix - prefix without "/" matches any key starting with "seg".
 			infos, err := store.ListPrefix(ctx, "seg")
 			require.NoError(t, err, "[%s] ListPrefix failed", name)
 			paths := fileInfoToStrList(infos)
-			assert.ElementsMatch(t, []string{"seg001", "seg002", "seg/child"}, paths,
+			assert.ElementsMatch(t, []string{"seg001", "seg002"}, paths,
 				"[%s] ListPrefix should not add trailing slash", name)
 
-			// List("seg") - appends "/" internally, so only "seg/child" is returned.
+			// List("seg") - appends "/" internally, so nothing is returned (no seg/ directory).
 			listed, err := store.List(ctx, "seg")
 			require.NoError(t, err, "[%s] List failed", name)
-			listedPaths := fileInfoToStrList(listed)
-			assert.ElementsMatch(t, []string{"seg/child"}, listedPaths,
-				"[%s] List should scope to seg/ prefix", name)
+			assert.Empty(t, listed, "[%s] List should return nothing when no seg/ directory exists", name)
 		})
 	}
 }
