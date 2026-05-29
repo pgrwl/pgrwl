@@ -218,7 +218,8 @@ x_run_post_restore_check() {
 
   psql -X -P pager=off -v ON_ERROR_STOP=1 \
     -f /var/lib/postgresql/scripts/pg/post_restore_check.sql \
-    postgres
+    postgres \
+    > "/tmp/${TEST_NAME}-post_restore_check.log" 2>&1
 }
 
 # toxiproxy utils

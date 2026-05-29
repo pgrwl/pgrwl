@@ -129,10 +129,14 @@ func (s *s3Storage) Get(ctx context.Context, remotePath string) (io.ReadCloser, 
 
 func (s *s3Storage) List(ctx context.Context, remotePath string) ([]FileInfo, error) {
 	fullPath := s.fullPath(remotePath)
+	prefix := fullPath
+	if prefix != "" && !endsWithSlash(prefix) {
+		prefix += "/"
+	}
 	var objects []FileInfo
 
 	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
-		Prefix:    fullPath,
+		Prefix:    prefix,
 		Recursive: true,
 	}) {
 		if obj.Err != nil {
