@@ -89,8 +89,10 @@ func (s *s3Storage) relativeKey(key string) string {
 
 // createUploader creates a new S3 uploader with the given part size and concurrency.
 func createUploader(client *s3.Client, partSize int64, concurrency int) *transfermanager.Client {
+	normalized := normalizeS3PartSize(partSize)
 	return transfermanager.New(client, func(o *transfermanager.Options) {
-		o.PartSizeBytes = normalizeS3PartSize(partSize)
+		o.PartSizeBytes = normalized
+		o.MultipartUploadThreshold = normalized
 		o.Concurrency = normalizeConcurrency(concurrency)
 	})
 }
