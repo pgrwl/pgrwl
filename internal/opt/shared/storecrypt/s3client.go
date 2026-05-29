@@ -1,87 +1,78 @@
 package storecrypt
 
 import (
-	"context"
 	"crypto/tls"
+	"fmt"
+	"net"
 	"net/http"
+	"strings"
+	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-)
-
-type RequestChecksumCalculation int
-
-const (
-	// RequestChecksumCalculationUnset is the unset value for RequestChecksumCalculation
-	RequestChecksumCalculationUnset RequestChecksumCalculation = iota
-
-	// RequestChecksumCalculationWhenSupported indicates request checksum will be calculated
-	// if the operation supports input checksums
-	RequestChecksumCalculationWhenSupported
-
-	// RequestChecksumCalculationWhenRequired indicates request checksum will be calculated
-	// if required by the operation or if user elects to set a checksum algorithm in request
-	RequestChecksumCalculationWhenRequired
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type S3Config struct {
-	EndpointURL                string
-	AccessKeyID                string
-	SecretAccessKey            string
-	Bucket                     string
-	Region                     string
-	UsePathStyle               bool
-	DisableSSL                 bool
-	RequestChecksumCalculation RequestChecksumCalculation
+	EndpointURL     string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
+	Region          string
+	UsePathStyle    bool
+	// DisableSSL skips TLS certificate verification. The connection still uses
+	// HTTPS when the endpoint URL has the https:// scheme.
+	DisableSSL bool
 }
 
 type S3Client struct {
-	client *s3.Client
+	client *minio.Client
 	bucket string
 }
 
-// NewS3Client initializes the S3 client and sets up the bucket name
-func NewS3Client(s3Config *S3Config) (*S3Client, error) {
-	// https://github.com/aws/aws-sdk-go-v2/issues/1295
+func NewS3Client(cfg *S3Config) (*S3Client, error) {
+	secure := !strings.HasPrefix(cfg.EndpointURL, "http://")
+	endpoint := strings.TrimPrefix(cfg.EndpointURL, "https://")
+	endpoint = strings.TrimPrefix(endpoint, "http://")
 
-	cfg, err := config.LoadDefaultConfig(
-		context.Background(),
-		config.WithRegion(s3Config.Region),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(s3Config.AccessKeyID, s3Config.SecretAccessKey, "")),
-		config.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{ // <--- here
-				TLSClientConfig: &tls.Config{
-					//nolint:gosec
-					InsecureSkipVerify: s3Config.DisableSSL,
-				},
-			},
-		}),
-	)
-	if err != nil {
-		return nil, err
+	lookup := minio.BucketLookupAuto
+	if cfg.UsePathStyle {
+		lookup = minio.BucketLookupPath
 	}
 
-	cfg.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
-	cfg.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
-
-	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(s3Config.EndpointURL)
-		o.UsePathStyle = s3Config.UsePathStyle
-		o.RequestChecksumCalculation = aws.RequestChecksumCalculation(s3Config.RequestChecksumCalculation)
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:        credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure:       secure,
+		Region:       cfg.Region,
+		BucketLookup: lookup,
+		Transport:    buildTransport(secure, cfg.DisableSSL),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("create minio client: %w", err)
+	}
 
-	return &S3Client{
-		client: client,
-		bucket: s3Config.Bucket,
-	}, nil
+	return &S3Client{client: client, bucket: cfg.Bucket}, nil
 }
 
-func (c *S3Client) Client() *s3.Client {
-	return c.client
-}
+func (c *S3Client) Client() *minio.Client { return c.client }
+func (c *S3Client) Bucket() string        { return c.bucket }
 
-func (c *S3Client) Bucket() string {
-	return c.bucket
+func buildTransport(secure, insecureSkipVerify bool) http.RoundTripper {
+	t := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          256,
+		MaxIdleConnsPerHost:   256,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	if secure {
+		t.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: insecureSkipVerify, //nolint:gosec
+		}
+	}
+	return t
 }
