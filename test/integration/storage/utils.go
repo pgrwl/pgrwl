@@ -10,15 +10,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/minio/minio-go/v7"
 	"github.com/pkg/sftp"
 
 	clients "github.com/pgrwl/pgrwl/internal/opt/shared/storecrypt"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 )
 
-func createS3Client() *s3.Client {
+func createS3Client() *minio.Client {
 	client, err := clients.NewS3Client(&clients.S3Config{
 		EndpointURL:     "https://localhost:9000",
 		AccessKeyID:     "minioadmin",

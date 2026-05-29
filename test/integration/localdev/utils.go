@@ -12,12 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/jackc/pglogrepl"
+	"github.com/minio/minio-go/v7"
 	"github.com/pgrwl/pgrwl/internal/opt/basebackup/backupdto"
 	st "github.com/pgrwl/pgrwl/internal/opt/shared/storecrypt"
 	"github.com/stretchr/testify/assert"
@@ -50,38 +46,32 @@ func loadRetentionIntegrationEnv(t *testing.T) retentionIntegrationEnv {
 	}
 }
 
-func newIntegrationS3Client(t *testing.T, ctx context.Context, env retentionIntegrationEnv) *s3.Client {
+func newIntegrationS3Client(t *testing.T, _ context.Context, env retentionIntegrationEnv) *minio.Client {
 	t.Helper()
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(
-		ctx,
-		awsconfig.WithRegion(env.region),
-		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(env.s3AccessKey, env.s3SecretKey, "")),
-	)
-	require.NoError(t, err)
-
-	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(env.s3Endpoint)
-		o.UsePathStyle = env.usePathStyle
+	client, err := st.NewS3Client(&st.S3Config{
+		EndpointURL:     env.s3Endpoint,
+		AccessKeyID:     env.s3AccessKey,
+		SecretAccessKey: env.s3SecretKey,
+		Bucket:          env.bucket,
+		Region:          env.region,
+		UsePathStyle:    env.usePathStyle,
+		DisableSSL:      env.disableTLSVerify,
 	})
+	require.NoError(t, err)
+	return client.Client()
 }
 
-func ensureIntegrationBucket(t *testing.T, ctx context.Context, client *s3.Client, bucket string) {
+func ensureIntegrationBucket(t *testing.T, ctx context.Context, client *minio.Client, bucket string) {
 	t.Helper()
 
-	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)})
+	err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 	if err == nil {
 		return
 	}
 
-	var bucketAlreadyOwned *s3types.BucketAlreadyOwnedByYou
-	var bucketAlreadyExists *s3types.BucketAlreadyExists
-	if errors.As(err, &bucketAlreadyOwned) || errors.As(err, &bucketAlreadyExists) {
-		return
-	}
-
-	// Some S3-compatible stores return generic API errors for existing buckets.
-	if strings.Contains(strings.ToLower(err.Error()), "bucketalready") || strings.Contains(strings.ToLower(err.Error()), "already exists") {
+	exists, errExists := client.BucketExists(ctx, bucket)
+	if errExists == nil && exists {
 		return
 	}
 

@@ -15,8 +15,7 @@ import (
 
 	storage "github.com/pgrwl/pgrwl/internal/opt/shared/storecrypt"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/minio/minio-go/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -147,28 +146,22 @@ func withPrefix(prefix, key string) string {
 	return prefix + "/" + key
 }
 
-func assertObjectSize(t *testing.T, ctx context.Context, client *s3.Client, bucket, key string, want int64) {
+func assertObjectSize(t *testing.T, ctx context.Context, client *minio.Client, bucket, key string, want int64) {
 	t.Helper()
 
-	head, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	info, err := client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
 	require.NoError(t, err)
 
-	assert.Equal(t, want, aws.ToInt64(head.ContentLength))
+	assert.Equal(t, want, info.Size)
 }
 
-func assertMultipartETag(t *testing.T, ctx context.Context, client *s3.Client, bucket, key string) {
+func assertMultipartETag(t *testing.T, ctx context.Context, client *minio.Client, bucket, key string) {
 	t.Helper()
 
-	head, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	info, err := client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
 	require.NoError(t, err)
 
-	etag := strings.Trim(aws.ToString(head.ETag), `"`)
+	etag := strings.Trim(info.ETag, `"`)
 	assert.Contains(t, etag, "-", "expected multipart ETag, got %q", etag)
 }
 
@@ -192,18 +185,15 @@ func createTempPatternFile(t *testing.T, size int) *os.File {
 	return f
 }
 
-func downloadObjectSHA256(t *testing.T, ctx context.Context, client *s3.Client, bucket, key string) string {
+func downloadObjectSHA256(t *testing.T, ctx context.Context, client *minio.Client, bucket, key string) string {
 	t.Helper()
 
-	out, err := client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	obj, err := client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
 	require.NoError(t, err)
-	defer out.Body.Close()
+	defer obj.Close()
 
 	h := sha256.New()
-	_, err = io.Copy(h, out.Body)
+	_, err = io.Copy(h, obj)
 	require.NoError(t, err)
 
 	return hex.EncodeToString(h.Sum(nil))

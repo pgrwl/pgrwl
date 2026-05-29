@@ -214,7 +214,10 @@ EOF
   bash "/var/lib/postgresql/scripts/utils/dircmp.sh" "${WAL_PATH}" "${PG_RECEIVEWAL_WAL_PATH}"
 
   echo_delim "run post_restore_check.sql"
-  psql -f /var/lib/postgresql/scripts/pg/post_restore_check.sql -v "ON_ERROR_STOP=1" postgres
+  psql -X -P pager=off -v ON_ERROR_STOP=1 \
+    -f /var/lib/postgresql/scripts/pg/post_restore_check.sql \
+    postgres \
+    > "/tmp/${TEST_NAME}-post_restore_check.log" 2>&1
 
   # search for errors in logs
   echo_delim "searching for errors in pgrwl logs"
@@ -224,7 +227,9 @@ EOF
   echo_delim "searching for errors in pg logs"
   if [[ -f "/var/log/postgresql/pg.log" ]]; then
     grep -i "err" "/var/log/postgresql/pg.log" || echo " > no errors found in pg logs"
-  fi  
+  fi
+
+  printf "\nOK\n"
 }
 
 x_backup_restore "${@}"
