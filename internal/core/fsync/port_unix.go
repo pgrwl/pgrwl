@@ -14,6 +14,11 @@ func Fsync(f *os.File) error {
 	return syscall.Fsync(int(f.Fd()))
 }
 
+func FsyncFd(fd int) error {
+	//nolint:gosec
+	return syscall.Fsync(fd)
+}
+
 // FsyncFname fsyncs path contents and the parent directory contents.
 //
 //nolint:revive
