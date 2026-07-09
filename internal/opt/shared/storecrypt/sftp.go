@@ -136,6 +136,38 @@ func (s *sftpStorage) ListTopLevelDirs(_ context.Context, prefix string) (map[st
 	return result, nil
 }
 
+func (s *sftpStorage) ListPrefix(_ context.Context, remotePath string) ([]FileInfo, error) {
+	fullPath := s.fullPath(remotePath)
+	dir := path.Dir(fullPath)
+	namePrefix := path.Base(fullPath)
+
+	entries, err := s.client.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var result []FileInfo
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), namePrefix) {
+			continue
+		}
+		entryPath := filepath.ToSlash(filepath.Join(dir, entry.Name()))
+		rel, err := filepath.Rel(s.baseDir, entryPath)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, FileInfo{
+			Path:    filepath.ToSlash(rel),
+			ModTime: entry.ModTime(),
+			Size:    entry.Size(),
+		})
+	}
+	return result, nil
+}
+
 func (s *sftpStorage) Rename(_ context.Context, oldRemotePath, newRemotePath string) error {
 	oldFull := s.fullPath(oldRemotePath)
 	newFull := s.fullPath(newRemotePath)
