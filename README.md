@@ -45,7 +45,7 @@ replication, automatic reconnects, partial WAL files, archive upload, retention,
 ## Overview
 
 Reliable PostgreSQL backups come with moving parts: WAL handling, scheduled jobs, compression, remote storage,
-and retention - each one more thing to configure, monitor, and debug.
+and retention - each is one more thing to configure, monitor, and debug.
 
 `pgrwl` replaces that entire stack with a single process: WAL streaming, scheduled base backups,
 compression, encryption, S3/SFTP upload, retention management, and a restore helper - all driven
@@ -131,11 +131,11 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
 - In production, `pgrwl` runs in **receive mode** as the main backup and archiving daemon.
 
 - It continuously streams WAL from PostgreSQL, writes in-progress segments as `*.partial` files,
-  and renames them to final WAL filenames when complete.
+  and renames them to their final WAL filenames once complete.
   Completed WAL files are then archived by the archive supervisor: optionally compressed,
   encrypted, uploaded to the configured backend, and removed locally after a successful upload.
 
-- `pgrwl` also creates scheduled full base backups, for example _once every three days_.
+- `pgrwl` also creates scheduled full base backups, for example, _once every three days_.
   Base backups can also be triggered manually through the HTTP API.
   Backup failures are logged and reported, but they do not stop WAL streaming,
   because WAL capture is the critical path.
@@ -144,19 +144,19 @@ PGHOST=localhost PGPORT=15432 PGUSER=postgres PGPASSWORD=postgres \
   or local storage, but under separate logical prefixes.
 
 - Retention is handled by a single **recovery-window policy**. `pgrwl` selects an **anchor backup**:
-  the newest successful basebackup that started before the recovery window begins.
+  the newest successful base backup that started before the recovery window begins.
   It keeps that backup, all newer successful backups, and all WAL files
   required to restore forward from the anchor backup.
 
 - For example, with a **72-hour recovery window**, `pgrwl` keeps enough
-  basebackup and WAL history to recover to any point in the last three days.
+  base backup and WAL history to recover to any point in the last three days.
 
 - During recovery, `pgrwl` runs in **serve mode**. PostgreSQL calls `pgrwl restore-command`
   from `restore_command`; the helper fetches requested WAL files from the restore daemon
   and writes them to the path expected by PostgreSQL.
   **Serve mode** exposes local `*.partial` WAL files from the receiver's `ReadWriteOnce` PVC.
   This follows the main design rule: **always stream WAL to the local filesystem first**, so recovery
-  can use the latest committed WAL records even if they were not archived yet.
+  can use the latest committed WAL records even if they have not been archived yet.
 
   ```ini
   # postgresql.conf
@@ -204,17 +204,17 @@ risk.
 There’s a significant difference between using `archive_command` and archiving WAL files via the streaming replication
 protocol.
 
-The `archive_command` is triggered only after a WAL file is fully completed-typically when it reaches 16 MiB (the
+The `archive_command` is triggered only after a WAL file is fully completed - typically when it reaches 16 MiB (the
 default segment size). This means that in a crash scenario, you could lose up to 16 MiB of data.
 
 You can mitigate this by setting a lower `archive_timeout` (e.g., 1 minute), but even then, in a worst-case scenario,
 you risk losing up to 1 minute of data.
 Also, it’s important to note that PostgreSQL preallocates WAL files to the configured `wal_segment_size`, so they are
-created with full size regardless of how much data has been written. (Quote from documentation:
-_It is therefore unwise to set a very short `archive_timeout` - it will bloat your archive storage._).
+created at full size regardless of how much data has been written. (As the PostgreSQL documentation puts it:
+_It is therefore unwise to set a very short `archive_timeout` - it will bloat your archive storage._)
 
-In contrast, streaming WAL archiving-when used with replication slots and the `synchronous_standby_names`
-parameter-ensures that the system can be restored to the latest committed transaction.
+In contrast, streaming WAL archiving - when used with replication slots and the `synchronous_standby_names`
+parameter - ensures that the system can be restored to the latest committed transaction.
 This approach provides true zero data loss (**RPO=0**), making it ideal for high-durability requirements.
 
 ---
