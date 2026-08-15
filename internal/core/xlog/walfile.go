@@ -19,16 +19,14 @@ type walfileT struct {
 	currpos  uint64
 	pathname string
 	fd       *os.File
+	sysfd    int // raw fd cached at open time; valid while fd is open
 }
 
 func (stream *StreamCtl) SyncWalFile() error {
 	if stream.walfile == nil {
 		return fmt.Errorf("stream.walfile is nil (SyncWalFile)")
 	}
-	if stream.walfile.fd == nil {
-		return fmt.Errorf("stream.walfile.fd is nil (SyncWalFile)")
-	}
-	return fsync.Fsync(stream.walfile.fd)
+	return fsync.FsyncFd(stream.walfile.sysfd)
 }
 
 func (stream *StreamCtl) WriteAtWalFile(data []byte, xlogoff uint64) (int, error) {
@@ -100,6 +98,7 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 				currpos:  0,
 				pathname: fullPath,
 				fd:       fd,
+				sysfd:    int(fd.Fd()),
 			}
 			return nil
 		}
@@ -127,6 +126,7 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 		currpos:  0,
 		pathname: fullPath,
 		fd:       fd,
+		sysfd:    int(fd.Fd()),
 	}
 
 	l.Info("starting new WAL segment")
