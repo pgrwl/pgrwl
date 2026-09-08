@@ -222,8 +222,3 @@ This approach provides true zero data loss (**RPO=0**), making it ideal for high
 ## License
 
 MIT. See [LICENSE](./LICENSE) for details.
-
-## Questions or Feedback?
-
-If anything in this README is unclear, please [open an issue](https://github.com/pgrwl/pgrwl/issues).
-Documentation improvements are always welcome, and even small wording fixes help new users.
