@@ -18,7 +18,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli/v3 v3.11.0
 	golang.org/x/crypto v0.56.0
-	golang.org/x/time v0.15.0
+	golang.org/x/time v0.16.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
