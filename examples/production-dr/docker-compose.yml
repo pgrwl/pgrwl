@@ -1,0 +1,208 @@
+# Production-style disaster recovery example for pgrwl.
+#
+# Normal operation (default profile):
+#   pg-primary      PostgreSQL 17 (+ pgrwl binary, see Dockerfile)
+#   pgrwl-receive   streams WAL, uploads segments and base backups to S3
+#   seaweedfs       S3-compatible object storage (single container)
+#
+# Recovery (profile "restore", started by scripts/04-* and 05-*):
+#   pgrwl-serve     serves WAL to the recovering PostgreSQL (local dir first, then S3)
+#   pg-restore      one-shot: pulls the base backup into PGDATA and writes recovery settings
+#
+# Endpoints on the host:
+#   PostgreSQL   psql "postgres://postgres:postgres@localhost:15432/postgres"
+#   pgrwl API    http://localhost:7070/api/v1/backups
+#   S3 API       http://localhost:8333 (access key: pgrwl / pgrwl-secret)
+
+services:
+  pg-primary:
+    image: pgrwl-production-dr/postgres-pgrwl:17.9
+    build:
+      context: .
+      args:
+        PG_IMAGE: postgres:17.9-bookworm
+        PGRWL_VERSION: "1.0.39"
+    container_name: pg-primary
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    command: >
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c hba_file=/etc/postgresql/pg_hba.conf
+    ports:
+      - "15432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    configs:
+      - source: postgresql.conf
+        target: /etc/postgresql/postgresql.conf
+      - source: pg_hba.conf
+        target: /etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  pgrwl-receive:
+    image: quay.io/pgrwl/pgrwl:1.0.39
+    # platform: linux/amd64   # uncomment on arm64 hosts: the image is published for amd64 only
+    container_name: pgrwl-receive
+    restart: unless-stopped
+    environment:
+      PGHOST: pg-primary
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    command: daemon -c /etc/pgrwl-config.yaml -m receive
+    ports:
+      - "7070:7070"
+    volumes:
+      - pgrwl-data:/mnt
+    configs:
+      - source: pgrwl-config.yaml
+        target: /etc/pgrwl-config.yaml
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+      seaweedfs-provision:
+        condition: service_completed_successfully
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.21
+    container_name: seaweedfs
+    restart: unless-stopped
+    command:
+      - server
+      - -s3
+      - -dir=/data
+      - -ip=seaweedfs
+      - -ip.bind=0.0.0.0
+      - -master.port=9333
+      - -volume.port=8080
+      - -filer.port=8888
+      - -s3.port=8333
+      - -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8333:8333"
+    volumes:
+      - seaweedfs-data:/data
+    configs:
+      - source: seaweedfs-s3.json
+        target: /etc/seaweedfs/s3.json
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8888/"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
+
+  seaweedfs-provision:
+    image: chrislusf/seaweedfs:4.21
+    container_name: seaweedfs-provision
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        until echo "cluster.ps" | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888 >/dev/null 2>&1; do sleep 2; done
+        echo "s3.bucket.create -name backups" | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888 || true
+        echo "s3.bucket.list" | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- restore profile
+
+  pgrwl-serve:
+    image: quay.io/pgrwl/pgrwl:1.0.39
+    # platform: linux/amd64   # see pgrwl-receive
+    container_name: pgrwl-serve
+    profiles: ["restore"]
+    command: daemon -c /etc/pgrwl-config.yaml -m serve
+    volumes:
+      - pgrwl-data:/mnt
+    configs:
+      - source: pgrwl-config.yaml
+        target: /etc/pgrwl-config.yaml
+
+  pg-restore:
+    image: pgrwl-production-dr/postgres-pgrwl:17.9
+    container_name: pg-restore
+    profiles: ["restore"]
+    restart: "no"
+    entrypoint: ["/bin/bash", "/restore.sh"]
+    environment:
+      # RESTORE_ID:            base backup id (UTC, YYYYMMDDHHMMSS); empty = latest
+      # RECOVERY_TARGET_TIME:  PostgreSQL timestamp, e.g. 2026-09-09 10:15:30.123456+00; empty = end of WAL
+      RESTORE_ID: ${RESTORE_ID:-}
+      RECOVERY_TARGET_TIME: ${RECOVERY_TARGET_TIME:-}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    configs:
+      - source: pgrwl-config.yaml
+        target: /etc/pgrwl-config.yaml
+      - source: restore.sh
+        target: /restore.sh
+
+volumes:
+  pg-data:
+  pgrwl-data:
+  seaweedfs-data:
+
+configs:
+  postgresql.conf:
+    content: |
+      listen_addresses      = '*'
+      wal_level             = replica
+      max_wal_senders       = 10
+      max_replication_slots = 10
+      timezone              = 'UTC'
+      log_timezone          = 'UTC'
+      log_min_messages      = 'WARNING'
+      log_line_prefix       = '%t [%p] '
+
+  pg_hba.conf:
+    content: |
+      local all         all         trust
+      host  all         all all     scram-sha-256
+      host  replication all all     scram-sha-256
+
+  seaweedfs-s3.json:
+    content: |
+      {"identities":[{"name":"pgrwl","credentials":[{"accessKey":"pgrwl","secretKey":"pgrwl-secret"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
+
+  pgrwl-config.yaml:
+    content: |
+      main:
+        listen_port: 7070
+        directory: "/mnt/wal-archive"
+      receiver:
+        slot: pgrwl_dr
+        uploader:
+          sync_interval: 10s
+          max_concurrency: 4
+        retention:
+          enable: false      # keep every backup while you experiment; production sets a recovery window
+      backup:
+        cron: "0 * * * *"    # hourly; the guide takes backups by hand with scripts/01-backup.sh
+      log:
+        level: info
+        format: text
+      storage:
+        name: s3
+        compression:
+          algo: gzip
+        encryption:
+          algo: aes-256-gcm
+          pass: change-me-in-production
+        s3:
+          url: http://seaweedfs:8333
+          access_key_id: pgrwl
+          secret_access_key: pgrwl-secret
+          bucket: backups
+          region: us-east-1
+          use_path_style: true
+          disable_ssl: true
+
+  restore.sh:
+    file: ./restore.sh
