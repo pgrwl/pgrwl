@@ -8,7 +8,7 @@ import (
 
 type Opts struct {
 	BaseDir string
-	Storage *st.VariadicStorage
+	Storage st.Storage
 }
 
 func Init(opts *Opts) http.Handler {

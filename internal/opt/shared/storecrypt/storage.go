@@ -38,4 +38,9 @@ type Storage interface {
 	// Rename moves/renames a single object from oldRemotePath to newRemotePath.
 	// For S3 this is implemented as copy+delete (not recursive prefix rename).
 	Rename(ctx context.Context, oldRemotePath, newRemotePath string) error
+
+	// ListPrefix returns all file infos whose remote path starts with the given
+	// prefix. Unlike List it does NOT append a trailing slash, so it is suitable
+	// for raw prefix scans (e.g. "walname--" to discover checksum variants).
+	ListPrefix(ctx context.Context, prefix string) ([]FileInfo, error)
 }

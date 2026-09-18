@@ -143,6 +143,23 @@ func storagePrefix(path string) string {
 	return path + "/"
 }
 
+func (s *InMemoryStorage) ListPrefix(_ context.Context, prefix string) ([]FileInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var infos []FileInfo
+	for name, data := range s.Files {
+		if strings.HasPrefix(name, prefix) {
+			infos = append(infos, FileInfo{
+				Path:    name,
+				ModTime: time.Now(),
+				Size:    int64(len(data)),
+			})
+		}
+	}
+	return infos, nil
+}
+
 func (s *InMemoryStorage) Rename(ctx context.Context, oldRemotePath, newRemotePath string) error {
 	if oldRemotePath == newRemotePath {
 		return nil

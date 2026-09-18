@@ -290,6 +290,32 @@ func (s *s3Storage) ListTopLevelDirs(ctx context.Context, prefix string) (map[st
 	return prefixes, nil
 }
 
+func (s *s3Storage) ListPrefix(ctx context.Context, remotePath string) ([]FileInfo, error) {
+	fullPath := s.fullPath(remotePath) // no trailing slash - raw prefix scan
+	var objects []FileInfo
+
+	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(fullPath),
+	})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get page: %w", err)
+		}
+		for _, obj := range page.Contents {
+			objects = append(objects, FileInfo{
+				Path:    s.relativeKey(aws.ToString(obj.Key)),
+				ModTime: aws.ToTime(obj.LastModified),
+				Size:    aws.ToInt64(obj.Size),
+			})
+		}
+	}
+
+	return objects, nil
+}
+
 func (s *s3Storage) Rename(ctx context.Context, oldRemotePath, newRemotePath string) error {
 	srcKey := s.fullPath(oldRemotePath)
 	dstKey := s.fullPath(newRemotePath)
