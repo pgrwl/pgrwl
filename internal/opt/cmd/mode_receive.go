@@ -217,7 +217,7 @@ func RunReceiveMode(opts *ReceiveModeOpts) error {
 			}
 		}()
 
-		u := receivesv.NewArchiveSupervisor(cfg, comp.walStor, &receivesv.Opts{
+		u := receivesv.NewArchiveSupervisor(cfg, st.NewChecksumStorage(comp.walStor), &receivesv.Opts{
 			ReceiveDirectory: opts.ReceiveDirectory,
 			PGRW:             comp.pgrw,
 		})

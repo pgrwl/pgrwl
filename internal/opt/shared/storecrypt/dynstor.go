@@ -313,6 +313,20 @@ func (vs *VariadicStorage) ListTopLevelDirs(ctx context.Context, prefix string) 
 	return vs.Backend.ListTopLevelDirs(ctx, prefix)
 }
 
+// ListPrefix returns FileInfo entries for all stored objects whose path starts
+// with the given prefix, stripping known codec extensions from the results.
+func (vs *VariadicStorage) ListPrefix(ctx context.Context, prefix string) ([]FileInfo, error) {
+	prefix = filepath.ToSlash(prefix)
+	files, err := vs.Backend.ListPrefix(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	for i := range files {
+		files[i].Path = vs.decodePath(files[i].Path)
+	}
+	return files, nil
+}
+
 func (vs *VariadicStorage) Rename(ctx context.Context, oldRemotePath, newRemotePath string) error {
 	// Normalize and strip transform extensions to get logical names
 	oldBase := vs.decodePath(filepath.ToSlash(oldRemotePath))

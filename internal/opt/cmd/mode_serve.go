@@ -12,6 +12,7 @@ import (
 	"github.com/pgrwl/pgrwl/config"
 	"github.com/pgrwl/pgrwl/internal/opt/api"
 	"github.com/pgrwl/pgrwl/internal/opt/api/serveapi"
+	st "github.com/pgrwl/pgrwl/internal/opt/shared/storecrypt"
 )
 
 type ServeModeOpts struct {
@@ -29,13 +30,14 @@ func RunServeMode(opts *ServeModeOpts) error {
 	ctx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
-	stor, err := api.SetupStorage(&api.SetupStorageOpts{
+	varicStor, err := api.SetupStorage(&api.SetupStorageOpts{
 		BaseDir: opts.Directory,
 		SubPath: config.LocalFSStorageSubpath,
 	})
 	if err != nil {
 		return fmt.Errorf("setup storage: %w", err)
 	}
+	stor := st.NewChecksumStorage(varicStor)
 
 	var wg sync.WaitGroup
 

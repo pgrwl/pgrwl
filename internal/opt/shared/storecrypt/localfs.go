@@ -147,6 +147,41 @@ func (l *localStorage) ListTopLevelDirs(_ context.Context, prefix string) (map[s
 	return result, nil
 }
 
+func (l *localStorage) ListPrefix(_ context.Context, remotePath string) ([]FileInfo, error) {
+	fullPath := l.fullPath(remotePath)
+	dir := filepath.Dir(fullPath)
+	namePrefix := filepath.Base(fullPath)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var result []FileInfo
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), namePrefix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(l.baseDir, filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, FileInfo{
+			Path:    filepath.ToSlash(rel),
+			ModTime: info.ModTime(),
+			Size:    info.Size(),
+		})
+	}
+	return result, nil
+}
+
 func (l *localStorage) Rename(_ context.Context, oldRemotePath, newRemotePath string) error {
 	oldFull := l.fullPath(oldRemotePath)
 	newFull := l.fullPath(newRemotePath)
