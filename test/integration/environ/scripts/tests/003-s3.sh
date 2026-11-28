@@ -35,9 +35,9 @@ x_remake_config() {
       "pass": "qwerty123"
     },
     "s3": {
-      "url": "https://minio:9000",
-      "access_key_id": "minioadmin",
-      "secret_access_key": "minioadmin123",
+      "url": "https://seaweedfs:9000",
+      "access_key_id": "s3admin",
+      "secret_access_key": "s3admin123",
       "bucket": "${TEST_NAME}",
       "region": "main",
       "use_path_style": true,

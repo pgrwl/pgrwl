@@ -31,8 +31,7 @@ env:
   CACHE_FILE_DOCKER_SSHD: docker-cache/docker_sshd.tgz
   CACHE_FILE_DOCKER_PG_PRIMARY: docker-cache/docker_pg_primary.tgz
   CACHE_FILE_DOCKER_PG_STANDBY: docker-cache/docker_pg_standby.tgz
-  CACHE_FILE_DOCKER_MINIO: docker-cache/docker_minio.tgz
-  CACHE_FILE_DOCKER_MINIO_MC: docker-cache/docker_minio_mc.tgz
+  CACHE_FILE_DOCKER_SEAWEEDFS: docker-cache/docker_seaweedfs.tgz
   CACHE_FILE_DOCKER_TOXIPROXY: docker-cache/docker_toxiproxy.tgz
   COMPOSE_FILE: "test/integration/environ/docker-compose.yml"
 
@@ -75,8 +74,7 @@ jobs:
             ${{ env.CACHE_FILE_DOCKER_PG_PRIMARY }}
             ${{ env.CACHE_FILE_DOCKER_PG_STANDBY }}
             ${{ env.CACHE_FILE_DOCKER_SSHD }}
-            ${{ env.CACHE_FILE_DOCKER_MINIO }}
-            ${{ env.CACHE_FILE_DOCKER_MINIO_MC }}
+            ${{ env.CACHE_FILE_DOCKER_SEAWEEDFS }}
             ${{ env.CACHE_FILE_DOCKER_TOXIPROXY }}
           key: ${{ steps.cache-key.outputs.value }}
 
@@ -92,8 +90,7 @@ jobs:
             "${CACHE_FILE_DOCKER_PG_PRIMARY}" \
             "${CACHE_FILE_DOCKER_PG_STANDBY}" \
             "${CACHE_FILE_DOCKER_SSHD}" \
-            "${CACHE_FILE_DOCKER_MINIO}" \
-            "${CACHE_FILE_DOCKER_MINIO_MC}" \
+            "${CACHE_FILE_DOCKER_SEAWEEDFS}" \
             "${CACHE_FILE_DOCKER_TOXIPROXY}" \
           | xargs -n1 -P4 bash -c '
             set -euo pipefail
@@ -125,7 +122,7 @@ jobs:
           set -euo pipefail
 
           echo "Building images for PG_MAJOR=${PG_MAJOR} from scratch (no cache hit)..."
-          docker compose -f "${{ env.COMPOSE_FILE }}" build pg-primary pg-standby sshd minio createbuckets toxiproxy
+          docker compose -f "${{ env.COMPOSE_FILE }}" build pg-primary pg-standby sshd seaweedfs toxiproxy
 
           echo "=== Images after build ==="
           docker images || true
@@ -137,8 +134,7 @@ jobs:
             "pgrwl/pg-primary-${PG_MAJOR}" "${CACHE_FILE_DOCKER_PG_PRIMARY}" \
             "pgrwl/pg-standby-${PG_MAJOR}" "${CACHE_FILE_DOCKER_PG_STANDBY}" \
             "pgrwl/sshd"                    "${CACHE_FILE_DOCKER_SSHD}" \
-            "pgrwl/minio"                   "${CACHE_FILE_DOCKER_MINIO}" \
-            "pgrwl/minio-mc"                "${CACHE_FILE_DOCKER_MINIO_MC}" \
+            "pgrwl/seaweedfs"               "${CACHE_FILE_DOCKER_SEAWEEDFS}" \
             "pgrwl/toxiproxy"               "${CACHE_FILE_DOCKER_TOXIPROXY}" \
           | xargs -n2 -P4 bash -c '
               set -euo pipefail
@@ -213,8 +209,7 @@ jobs:
             ${{ env.CACHE_FILE_DOCKER_PG_PRIMARY }}
             ${{ env.CACHE_FILE_DOCKER_PG_STANDBY }}
             ${{ env.CACHE_FILE_DOCKER_SSHD }}
-            ${{ env.CACHE_FILE_DOCKER_MINIO }}
-            ${{ env.CACHE_FILE_DOCKER_MINIO_MC }}
+            ${{ env.CACHE_FILE_DOCKER_SEAWEEDFS }}
             ${{ env.CACHE_FILE_DOCKER_TOXIPROXY }}
           key: ${{ steps.cache-key.outputs.value }}
 
@@ -234,8 +229,7 @@ jobs:
             "${CACHE_FILE_DOCKER_PG_PRIMARY}" \
             "${CACHE_FILE_DOCKER_PG_STANDBY}" \
             "${CACHE_FILE_DOCKER_SSHD}" \
-            "${CACHE_FILE_DOCKER_MINIO}" \
-            "${CACHE_FILE_DOCKER_MINIO_MC}" \
+            "${CACHE_FILE_DOCKER_SEAWEEDFS}" \
             "${CACHE_FILE_DOCKER_TOXIPROXY}" \
           | xargs -n1 -P4 bash -c '
             set -euo pipefail

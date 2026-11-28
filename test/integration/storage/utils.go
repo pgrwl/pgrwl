@@ -21,8 +21,8 @@ import (
 func createS3Client() *s3.Client {
 	client, err := clients.NewS3Client(&clients.S3Config{
 		EndpointURL:     "https://localhost:9000",
-		AccessKeyID:     "minioadmin",
-		SecretAccessKey: "minioadmin123",
+		AccessKeyID:     "s3admin",
+		SecretAccessKey: "s3admin123",
 		Bucket:          "backups",
 		Region:          "main",
 		UsePathStyle:    true,

@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       curl gnupg lsb-release ca-certificates \
-      openssh-server sudo vim net-tools telnet mc python3 strace \
+      openssh-server sudo vim net-tools telnet mc python3 strace awscli \
       postgresql-common tzdata; \
     # pg
     YES=true /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh; \
@@ -70,10 +70,6 @@ RUN echo "postgres:postgres" | chpasswd; \
     chmod +x /entrypoint.sh
 
 ######################################################################
-# Copy binaries (1)
-COPY --from=quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z /usr/bin/mc /usr/local/bin/minio-mc
-
-######################################################################
 # Copy test scripts (these files are frequently changed, so it's better to make this layer as late as possible)
 
 COPY files/configs /var/lib/postgresql/configs
@@ -82,7 +78,7 @@ RUN find /var/lib/postgresql/scripts/tests -type f -name '*.sh' -exec chmod +x {
 RUN chown -R postgres:postgres /var/lib/postgresql
 
 ######################################################################
-# Copy binaries (2)
+# Copy binaries
 COPY bin/ /usr/local/bin
 
 ######################################################################

@@ -22,16 +22,16 @@ while IFS= read -r -d '' filename; do
     --from-file="${filename}" --dry-run=client -o yaml | kubectl apply -f -
 done < <(find "manifests/configs" -type f -print0)
 
-# create minio certs
-kubectl -n pgrwl-test create secret generic minio-certs \
-  --from-file=public.crt=./files/minio/certs/public.crt \
-  --from-file=private.key=./files/minio/certs/private.key \
+# create seaweedfs certs
+kubectl -n pgrwl-test create secret generic seaweedfs-certs \
+  --from-file=public.crt=./files/seaweedfs/certs/public.crt \
+  --from-file=private.key=./files/seaweedfs/certs/private.key \
   --dry-run=client -oyaml | kubectl apply -f -
 
 # deploy and restart workloads
 kubectl apply -f manifests/
 kubectl -n pgrwl-test rollout restart sts postgres
-kubectl -n pgrwl-test rollout restart sts minio
+kubectl -n pgrwl-test rollout restart sts seaweedfs
 kubectl -n pgrwl-test rollout restart sts pgrwl-receive
 kubectl -n pgrwl-test rollout restart deploy pgrwl-ui
 kubectl -n mon rollout restart sts prometheus

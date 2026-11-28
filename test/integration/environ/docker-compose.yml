@@ -64,44 +64,67 @@ services:
     ports:
       - "2525:22"
 
-  minio:
+  # SeaweedFS all-in-one (master + volume + filer + S3 gateway in one process).
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY create the admin identity,
+  # S3_BUCKET pre-creates the bucket.
+  seaweedfs:
     build:
       context: .
-      dockerfile: ./dockerfiles/minio/Dockerfile
-    image: pgrwl/minio
-    container_name: pgrwl_minio
+      dockerfile: ./dockerfiles/seaweedfs/Dockerfile
+    image: pgrwl/seaweedfs
+    container_name: pgrwl_seaweedfs
+    command:
+      - mini
+      - -s3.port=9000
+      - -s3.cert.file=/certs/public.crt
+      - -s3.key.file=/certs/private.key
+      # lets tests wipe a versioned bucket with a single DeleteBucket call
+      - -s3.allowDeleteBucketNotEmpty
+      # not needed for tests
+      - -webdav=false
+      - -admin.ui=false
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
     ports:
-      - "9000:9000" # S3 API
-      - "9001:9001" # Console
+      - "9000:9000" # S3 API (HTTPS)
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin123
+      AWS_ACCESS_KEY_ID: s3admin
+      AWS_SECRET_ACCESS_KEY: s3admin123
+      S3_BUCKET: backups
     volumes:
-      - minio_data:/data
-      - ./files/minio/certs:/root/.minio/certs:ro
-    command: server /data --console-address ":9001"
+      - seaweedfs_data:/data
+      - ./files/seaweedfs/certs:/certs:ro
     healthcheck:
-      test: [ "CMD", "curl", "-k", "https://localhost:9000/minio/health/ready" ]
+      test: [ "CMD", "curl", "-kfs", "https://localhost:9000/healthz" ]
       interval: 2s
       timeout: 20s
       retries: 30
     restart: unless-stopped
 
+  # Enable versioning on the bucket pre-created via S3_BUCKET.
+  # TLS is verified against the test cert (SAN: seaweedfs).
   createbuckets:
-    build:
-      context: .
-      dockerfile: ./dockerfiles/minio_mc/Dockerfile
-    image: pgrwl/minio-mc
+    image: amazon/aws-cli:2.42.5
     depends_on:
-      minio:
+      seaweedfs:
         condition: service_healthy
-    entrypoint: >
-      sh -c "
-      mc alias set local https://minio:9000 minioadmin minioadmin123 --insecure && \
-      mc mb local/backups --insecure || true && \
-      mc version enable local/backups --insecure && \
-      exit 0;
-      "
+    environment:
+      AWS_ACCESS_KEY_ID: s3admin
+      AWS_SECRET_ACCESS_KEY: s3admin123
+      AWS_DEFAULT_REGION: main
+      AWS_ENDPOINT_URL: https://seaweedfs:9000
+      AWS_CA_BUNDLE: /certs/public.crt
+    volumes:
+      - ./files/seaweedfs/certs:/certs:ro
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        aws configure set default.s3.addressing_style path
+        # S3_BUCKET is created shortly after seaweedfs reports healthy
+        aws s3api wait bucket-exists --bucket backups
+        aws s3api put-bucket-versioning --bucket backups --versioning-configuration Status=Enabled
+    restart: "no"
 
   toxiproxy:
     build:
@@ -111,10 +134,10 @@ services:
     container_name: pgrwl_toxiproxy
     ports:
       - "8474:8474"   # control API
-      - "9005:9005"   # MinIO proxy port used by tests
+      - "9005:9005"   # S3 (seaweedfs) proxy port used by tests
     restart: unless-stopped
 
 volumes:
   pg-primary-data:
   pg-standby-data:
-  minio_data:
+  seaweedfs_data:

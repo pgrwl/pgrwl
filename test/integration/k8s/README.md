@@ -33,12 +33,14 @@ curl -X GET http://localhost:5000/v2/pgrwl/tags/list
   Pass: admin
   ```
 
-- minio: https://localhost:30267
+- seaweedfs admin UI: http://localhost:30267
 
   ```
-  User: minioadmin
-  Pass: minioadmin123
+  User: s3admin
+  Pass: s3admin123
   ```
+
+- seaweedfs S3 API: https://localhost:30268 (self-signed cert, same credentials)
 
 - pgrwl-ui: http://localhost:30272/ui
 

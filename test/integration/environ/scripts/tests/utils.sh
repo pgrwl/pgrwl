@@ -47,27 +47,34 @@ export PGPASSWORD="postgres"
 export PGDATABASE="postgres"
 export PGSSLMODE="disable"
 
+# S3 (seaweedfs)
+
+export S3_ENDPOINT="https://seaweedfs:9000"
+
+# x_aws <aws cli args...>: aws cli against the test S3 (seaweedfs).
+# Credentials/config are passed per call (not exported), so pgrwl processes
+# started by the tests never pick them up.
+x_aws() {
+  AWS_ACCESS_KEY_ID="s3admin" \
+  AWS_SECRET_ACCESS_KEY="s3admin123" \
+  AWS_CONFIG_FILE="/var/lib/postgresql/configs/aws-cli.config" \
+  PYTHONWARNINGS="ignore:Unverified HTTPS request" \
+    aws --endpoint-url "${S3_ENDPOINT}" --no-verify-ssl "$@"
+}
+
 # cleanup possible state
 
 x_remake_buckets() {
   log_info "recreate bucket for test: ${TEST_NAME}"
 
-  minio-mc alias set local https://minio:9000 minioadmin minioadmin123 --insecure
-  minio-mc rb --force "local/${TEST_NAME}" --insecure || true
+  # seaweedfs runs with -s3.allowDeleteBucketNotEmpty, so this drops the bucket
+  # together with all object versions and delete markers
+  x_aws s3api delete-bucket --bucket "${TEST_NAME}" 2>/dev/null || true
+  x_aws s3api wait bucket-not-exists --bucket "${TEST_NAME}"
 
-  # Wait until bucket is really gone
-  for i in {1..10}; do
-    if minio-mc ls "local/${TEST_NAME}" --insecure >/dev/null 2>&1; then
-      log_info "Waiting for bucket to be deleted..."
-      sleep 1
-    else
-      log_info "Bucket is deleted."
-      break
-    fi
-  done
-
-  minio-mc mb "local/${TEST_NAME}" --insecure || true
-  minio-mc version enable "local/${TEST_NAME}" --insecure
+  x_aws s3api create-bucket --bucket "${TEST_NAME}" >/dev/null
+  x_aws s3api put-bucket-versioning --bucket "${TEST_NAME}" \
+    --versioning-configuration Status=Enabled
 }
 
 x_kill_proc_rmrf_tmp() {
@@ -224,9 +231,9 @@ x_run_post_restore_check() {
 # toxiproxy utils
 
 export TOXIPROXY_API="http://toxiproxy:8474"
-export TOXIPROXY_MINIO_PROXY="minio_s3"
-export TOXIPROXY_MINIO_LISTEN="0.0.0.0:9005"
-export TOXIPROXY_MINIO_UPSTREAM="minio:9000"
+export TOXIPROXY_S3_PROXY="seaweedfs_s3"
+export TOXIPROXY_S3_LISTEN="0.0.0.0:9005"
+export TOXIPROXY_S3_UPSTREAM="seaweedfs:9000"
 
 x_wait_http_ok() {
   local url="${1:?url required}"
@@ -253,58 +260,58 @@ x_toxiproxy_reset() {
   curl -fsS -X POST "${TOXIPROXY_API}/reset" >/dev/null
 }
 
-x_toxiproxy_create_minio_proxy() {
-  log_info "creating toxiproxy minio proxy"
+x_toxiproxy_create_s3_proxy() {
+  log_info "creating toxiproxy s3 proxy"
   curl -fsS -X POST "${TOXIPROXY_API}/proxies" \
     -H 'Content-Type: application/json' \
     -d "{
-      \"name\": \"${TOXIPROXY_MINIO_PROXY}\",
-      \"listen\": \"${TOXIPROXY_MINIO_LISTEN}\",
-      \"upstream\": \"${TOXIPROXY_MINIO_UPSTREAM}\"
+      \"name\": \"${TOXIPROXY_S3_PROXY}\",
+      \"listen\": \"${TOXIPROXY_S3_LISTEN}\",
+      \"upstream\": \"${TOXIPROXY_S3_UPSTREAM}\"
     }" >/dev/null || true
 }
 
-x_toxiproxy_delete_minio_proxy() {
-  curl -fsS -X DELETE "${TOXIPROXY_API}/proxies/${TOXIPROXY_MINIO_PROXY}" >/dev/null 2>&1 || true
+x_toxiproxy_delete_s3_proxy() {
+  curl -fsS -X DELETE "${TOXIPROXY_API}/proxies/${TOXIPROXY_S3_PROXY}" >/dev/null 2>&1 || true
 }
 
-x_toxiproxy_enable_minio() {
-  log_info "enabling minio proxy"
-  curl -fsS -X POST "${TOXIPROXY_API}/proxies/${TOXIPROXY_MINIO_PROXY}" \
+x_toxiproxy_enable_s3() {
+  log_info "enabling s3 proxy"
+  curl -fsS -X POST "${TOXIPROXY_API}/proxies/${TOXIPROXY_S3_PROXY}" \
     -H 'Content-Type: application/json' \
     -d '{"enabled":true}' >/dev/null
 }
 
-x_toxiproxy_disable_minio() {
-  log_info "disabling minio proxy"
-  curl -fsS -X POST "${TOXIPROXY_API}/proxies/${TOXIPROXY_MINIO_PROXY}" \
+x_toxiproxy_disable_s3() {
+  log_info "disabling s3 proxy"
+  curl -fsS -X POST "${TOXIPROXY_API}/proxies/${TOXIPROXY_S3_PROXY}" \
     -H 'Content-Type: application/json' \
     -d '{"enabled":false}' >/dev/null
 }
 
-x_toxiproxy_setup_minio() {
+x_toxiproxy_setup_s3() {
   x_wait_toxiproxy_up
   x_toxiproxy_reset
-  x_toxiproxy_delete_minio_proxy
-  x_toxiproxy_create_minio_proxy
-  x_toxiproxy_enable_minio
+  x_toxiproxy_delete_s3_proxy
+  x_toxiproxy_create_s3_proxy
+  x_toxiproxy_enable_s3
 }
 
-x_toxiproxy_cut_minio_after_delay() {
+x_toxiproxy_cut_s3_after_delay() {
   local delay="${1:-2}"
   local downtime="${2:-5}"
 
   (
     sleep "${delay}"
-    log_info "cutting minio through toxiproxy for ${downtime}s"
-    x_toxiproxy_disable_minio
+    log_info "cutting s3 through toxiproxy for ${downtime}s"
+    x_toxiproxy_disable_s3
     sleep "${downtime}"
-    x_toxiproxy_enable_minio
-    log_info "restored minio through toxiproxy"
+    x_toxiproxy_enable_s3
+    log_info "restored s3 through toxiproxy"
   ) &
 }
 
-x_toxiproxy_flap_minio() {
+x_toxiproxy_flap_s3() {
   local delay_before_first="${1:-2}"
   local cycles="${2:-2}"
   local downtime="${3:-4}"
@@ -314,10 +321,10 @@ x_toxiproxy_flap_minio() {
     sleep "${delay_before_first}"
     local i
     for ((i = 1; i <= cycles; i++)); do
-      log_info "toxiproxy minio flap cycle ${i}/${cycles}: down ${downtime}s"
-      x_toxiproxy_disable_minio
+      log_info "toxiproxy s3 flap cycle ${i}/${cycles}: down ${downtime}s"
+      x_toxiproxy_disable_s3
       sleep "${downtime}"
-      x_toxiproxy_enable_minio
+      x_toxiproxy_enable_s3
 
       if (( i < cycles )); then
         sleep "${pause_between}"

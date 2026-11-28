@@ -18,11 +18,11 @@ nodes:
       - containerPort: 30266
         hostPort: 30266
         protocol: TCP
-      # minio-ui
+      # seaweedfs-admin-ui
       - containerPort: 30267
         hostPort: 30267
         protocol: TCP
-      # minio-server
+      # seaweedfs-s3
       - containerPort: 30268
         hostPort: 30268
         protocol: TCP
