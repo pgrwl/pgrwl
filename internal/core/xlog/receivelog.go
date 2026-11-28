@@ -56,6 +56,28 @@ type StreamCtl struct {
 	walfile               *walfileT
 	startedAt             time.Time
 	mu                    sync.RWMutex
+
+	// openWalPath is the path of the WAL segment the receiver currently owns.
+	// It is published *before* the file is created (and padded) and cleared
+	// only after the file is closed/renamed, so concurrent readers (the archive
+	// uploader, which uploads and DELETES everything else in the directory)
+	// never see a live .partial file as "not in use". Guarded by mu.
+	openWalPath string
+}
+
+// setOpenWalPath publishes (or clears, with "") the in-use WAL segment path.
+func (stream *StreamCtl) setOpenWalPath(p string) {
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	stream.openWalPath = p
+}
+
+// OpenWalPath returns the path of the WAL segment currently being created or
+// written, or "" if none. Safe for concurrent use.
+func (stream *StreamCtl) OpenWalPath() string {
+	stream.mu.RLock()
+	defer stream.mu.RUnlock()
+	return stream.openWalPath
 }
 
 func NewStream(o *StreamOpts) *StreamCtl {

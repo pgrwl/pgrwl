@@ -71,6 +71,10 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 
 	l.Debug("opening WAL file for write")
 
+	// Claim the segment before it exists on disk: creating and zero-padding it
+	// takes a while, and the archive uploader must not pick it up meanwhile.
+	stream.setOpenWalPath(fullPath)
+
 	/*
 	 * When streaming to files, if an existing file exists we verify that it's
 	 * either empty (just created), or a complete WalSegSz segment (in which
@@ -104,6 +108,7 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 			return nil
 		}
 		if stat.Size() != 0 {
+			stream.setOpenWalPath("")
 			return fmt.Errorf("corrupt WAL file %s: expected size 0 or %d bytes, found %d",
 				fullPath,
 				stream.walSegSz,
@@ -120,6 +125,7 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 	// Otherwise create new file and preallocate
 	fd, err := stream.createFileAndPad(fullPath, stream.walSegSz)
 	if err != nil {
+		stream.setOpenWalPath("")
 		return fmt.Errorf("could not create WAL file %s: %w", fullPath, err)
 	}
 
@@ -275,6 +281,9 @@ func (stream *StreamCtl) closeNoRename() error {
 
 	l.Debug("fsync filename and parent-dir")
 	err = fsync.FsyncFnameAndDir(pathname)
+	// released only after it's durable on disk (or failed): from here on the
+	// .partial is no longer written by the receiver
+	stream.setOpenWalPath("")
 	if err != nil {
 		return err
 	}
@@ -310,6 +319,8 @@ func (stream *StreamCtl) closeAndRename() error {
 		return err
 	}
 	stream.walfile = nil
+	// the .partial name no longer exists; the completed segment may be uploaded
+	stream.setOpenWalPath("")
 
 	l.Debug("fsync filename and parent-dir", slog.String("path", filepath.ToSlash(finalName)))
 	if err := fsync.FsyncFnameAndDir(finalName); err != nil {

@@ -19,6 +19,7 @@ func TestOpenWalFile_SegmentIsNotSparse(t *testing.T) {
 	stream := setupTestStreamCtl(t)
 	require.NoError(t, stream.OpenWalFile(pglogrepl.LSN(0)))
 	pathname := stream.walfile.pathname
+	//nolint:errcheck
 	defer func() { _ = stream.CloseWalFile() }()
 
 	fi, err := os.Stat(pathname)
