@@ -92,13 +92,15 @@ func (pgrw *pgReceiveWal) Run(ctx context.Context) error {
 	}
 }
 
+// CurrentOpenWALFileName returns the WAL segment the receiver currently owns
+// (being created, written, or closed/renamed), or "" if none.
 func (pgrw *pgReceiveWal) CurrentOpenWALFileName() string {
-	pgrw.streamMu.Lock()
-	defer pgrw.streamMu.Unlock()
-	if pgrw.stream == nil || pgrw.stream.walfile == nil || pgrw.stream.walfile.fd == nil {
+	pgrw.streamMu.RLock()
+	defer pgrw.streamMu.RUnlock()
+	if pgrw.stream == nil {
 		return ""
 	}
-	return pgrw.stream.walfile.pathname
+	return pgrw.stream.OpenWalPath()
 }
 
 func (pgrw *pgReceiveWal) log() *slog.Logger {

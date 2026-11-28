@@ -71,6 +71,10 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 
 	l.Debug("opening WAL file for write")
 
+	// Claim the segment before it exists on disk: creating and zero-padding it
+	// takes a while, and the archive uploader must not pick it up meanwhile.
+	stream.setOpenWalPath(fullPath)
+
 	/*
 	 * When streaming to files, if an existing file exists we verify that it's
 	 * either empty (just created), or a complete WalSegSz segment (in which
@@ -104,6 +108,7 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 			return nil
 		}
 		if stat.Size() != 0 {
+			stream.setOpenWalPath("")
 			return fmt.Errorf("corrupt WAL file %s: expected size 0 or %d bytes, found %d",
 				fullPath,
 				stream.walSegSz,
@@ -118,8 +123,9 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 	)
 
 	// Otherwise create new file and preallocate
-	fd, err := stream.createFileAndTruncate(fullPath, stream.walSegSz)
+	fd, err := stream.createFileAndPad(fullPath, stream.walSegSz)
 	if err != nil {
+		stream.setOpenWalPath("")
 		return fmt.Errorf("could not create WAL file %s: %w", fullPath, err)
 	}
 
@@ -133,24 +139,50 @@ func (stream *StreamCtl) OpenWalFile(startpoint pglogrepl.LSN) error {
 	return nil
 }
 
-func (stream *StreamCtl) createFileAndTruncate(fullPath string, initSize uint64) (*os.File, error) {
+// zeroPadChunk is the buffer size used to zero-fill a new WAL segment.
+const zeroPadChunk = 1024 * 1024
+
+// createFileAndPad creates the file and fills it with padSize zero bytes.
+//
+// Like pg_receivewal (pg_pwrite_zeros in walmethods.c dir_open_for_write) the
+// zeros are really written instead of ftruncate()-ing a sparse file:
+//   - out-of-space surfaces here, when the segment is created, and not on a
+//     later write of WAL that the primary is waiting to have flushed;
+//   - blocks are allocated up front, so the per-message fsync in synchronous
+//     mode does not also have to commit new block allocations every time.
+//
+// As in pg_receivewal there is no fsync here: the data written later into the
+// segment is fsynced (SyncWalFile / close).
+func (stream *StreamCtl) createFileAndPad(fullPath string, padSize uint64) (*os.File, error) {
 	// Create new file
 	fd, err := os.OpenFile(fullPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o660)
 	if err != nil {
 		return nil, fmt.Errorf("could not create file %s: %w", fullPath, err)
 	}
 
-	// Preallocate file with zeros up to initSize
-	truncateSize, err := conv.Uint64ToInt64(initSize)
-	if err != nil {
+	if err := writeZeros(fd, padSize); err != nil {
 		_ = fd.Close()
-		return nil, err
-	}
-	if err := fd.Truncate(truncateSize); err != nil {
-		_ = fd.Close()
-		return nil, fmt.Errorf("could not preallocate file %s: %w", fullPath, err)
+		_ = os.Remove(fullPath) // release the space, like pg_receivewal on failure
+		return nil, fmt.Errorf("could not pad file %s: %w", fullPath, err)
 	}
 	return fd, nil
+}
+
+// writeZeros writes size zero bytes at the beginning of f.
+func writeZeros(f *os.File, size uint64) error {
+	zeros := make([]byte, min(size, zeroPadChunk))
+	for off := uint64(0); off < size; {
+		n := min(size-off, uint64(len(zeros)))
+		offInt64, err := conv.Uint64ToInt64(off)
+		if err != nil {
+			return err
+		}
+		if _, err := f.WriteAt(zeros[:n], offInt64); err != nil {
+			return err
+		}
+		off += n
+	}
+	return nil
 }
 
 func (stream *StreamCtl) openFileAndFsync(fullPath string) (*os.File, error) {
@@ -249,6 +281,9 @@ func (stream *StreamCtl) closeNoRename() error {
 
 	l.Debug("fsync filename and parent-dir")
 	err = fsync.FsyncFnameAndDir(pathname)
+	// released only after it's durable on disk (or failed): from here on the
+	// .partial is no longer written by the receiver
+	stream.setOpenWalPath("")
 	if err != nil {
 		return err
 	}
@@ -284,6 +319,8 @@ func (stream *StreamCtl) closeAndRename() error {
 		return err
 	}
 	stream.walfile = nil
+	// the .partial name no longer exists; the completed segment may be uploaded
+	stream.setOpenWalPath("")
 
 	l.Debug("fsync filename and parent-dir", slog.String("path", filepath.ToSlash(finalName)))
 	if err := fsync.FsyncFnameAndDir(finalName); err != nil {

@@ -24,6 +24,10 @@ import (
 
 // https://github.com/postgres/postgres/blob/master/src/bin/pg_basebackup/receivelog.c
 
+// drainReceiveTimeout is how long handleCopyStream waits for a *subsequent*
+// message while draining already-arrived data (see handleCopyStream).
+const drainReceiveTimeout = time.Millisecond
+
 type StreamOpts struct {
 	StartPos         pglogrepl.LSN
 	Timeline         uint32
@@ -52,6 +56,28 @@ type StreamCtl struct {
 	walfile               *walfileT
 	startedAt             time.Time
 	mu                    sync.RWMutex
+
+	// openWalPath is the path of the WAL segment the receiver currently owns.
+	// It is published *before* the file is created (and padded) and cleared
+	// only after the file is closed/renamed, so concurrent readers (the archive
+	// uploader, which uploads and DELETES everything else in the directory)
+	// never see a live .partial file as "not in use". Guarded by mu.
+	openWalPath string
+}
+
+// setOpenWalPath publishes (or clears, with "") the in-use WAL segment path.
+func (stream *StreamCtl) setOpenWalPath(p string) {
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	stream.openWalPath = p
+}
+
+// OpenWalPath returns the path of the WAL segment currently being created or
+// written, or "" if none. Safe for concurrent use.
+func (stream *StreamCtl) OpenWalPath() string {
+	stream.mu.RLock()
+	defer stream.mu.RUnlock()
+	return stream.openWalPath
 }
 
 func NewStream(o *StreamOpts) *StreamCtl {
@@ -288,8 +314,14 @@ func (stream *StreamCtl) handleCopyStream(ctx context.Context) (*pglogrepl.CopyD
 				/*
 				 * Process the received data, and any subsequent data we can read
 				 * without blocking.
+				 *
+				 * C uses CopyStreamReceive(conn, 0, ...) here (zero timeout). pgconn
+				 * has no "is data buffered" check, so a tiny deadline stands in for
+				 * it. It must stay short: the fsync + flush feedback at the top of
+				 * the outer loop only run once this drain loop exits, so any wait here
+				 * directly adds to synchronous commit latency on the primary.
 				 */
-				ctxTimeout, cancel = context.WithTimeout(ctx, 1*time.Second)
+				ctxTimeout, cancel = context.WithTimeout(ctx, drainReceiveTimeout)
 				msg, err = stream.conn.ReceiveMessage(ctxTimeout)
 				cancel()
 				if pgconn.Timeout(err) {

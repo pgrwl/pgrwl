@@ -23,7 +23,7 @@ func setupTestStreamCtl(t *testing.T) *StreamCtl {
 	}
 }
 
-func TestOpenWalFile_CreateAndTruncate(t *testing.T) {
+func TestOpenWalFile_CreateAndPad(t *testing.T) {
 	stream := setupTestStreamCtl(t)
 	lsn := pglogrepl.LSN(0x0)
 
@@ -233,4 +233,30 @@ func TestSyncWalFile_Errors(t *testing.T) {
 	stream := &StreamCtl{}
 	err := stream.SyncWalFile()
 	assert.Error(t, err)
+}
+
+// The in-use segment path is what the archive uploader skips; it must be set
+// while the receiver owns the segment and cleared once the segment is released.
+func TestOpenWalPath_Lifecycle(t *testing.T) {
+	t.Run("incomplete segment", func(t *testing.T) {
+		stream := setupTestStreamCtl(t)
+		assert.Equal(t, "", stream.OpenWalPath())
+
+		assert.NoError(t, stream.OpenWalFile(pglogrepl.LSN(0)))
+		assert.Equal(t, stream.walfile.pathname, stream.OpenWalPath())
+		assert.True(t, strings.HasSuffix(stream.OpenWalPath(), stream.partialSuffix))
+
+		assert.NoError(t, stream.CloseWalFile()) // no rename: segment is not complete
+		assert.Equal(t, "", stream.OpenWalPath())
+	})
+
+	t.Run("complete segment", func(t *testing.T) {
+		stream := setupTestStreamCtl(t)
+		assert.NoError(t, stream.OpenWalFile(pglogrepl.LSN(0)))
+		_, err := stream.WriteAtWalFile(make([]byte, stream.walSegSz), 0)
+		assert.NoError(t, err)
+
+		assert.NoError(t, stream.CloseWalFile()) // renamed to the final name
+		assert.Equal(t, "", stream.OpenWalPath())
+	})
 }
