@@ -23,7 +23,7 @@ func setupTestStreamCtl(t *testing.T) *StreamCtl {
 	}
 }
 
-func TestOpenWalFile_CreateAndTruncate(t *testing.T) {
+func TestOpenWalFile_CreateAndPad(t *testing.T) {
 	stream := setupTestStreamCtl(t)
 	lsn := pglogrepl.LSN(0x0)
 

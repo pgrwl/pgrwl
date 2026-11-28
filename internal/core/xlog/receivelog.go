@@ -24,6 +24,10 @@ import (
 
 // https://github.com/postgres/postgres/blob/master/src/bin/pg_basebackup/receivelog.c
 
+// drainReceiveTimeout is how long handleCopyStream waits for a *subsequent*
+// message while draining already-arrived data (see handleCopyStream).
+const drainReceiveTimeout = time.Millisecond
+
 type StreamOpts struct {
 	StartPos         pglogrepl.LSN
 	Timeline         uint32
@@ -288,8 +292,14 @@ func (stream *StreamCtl) handleCopyStream(ctx context.Context) (*pglogrepl.CopyD
 				/*
 				 * Process the received data, and any subsequent data we can read
 				 * without blocking.
+				 *
+				 * C uses CopyStreamReceive(conn, 0, ...) here (zero timeout). pgconn
+				 * has no "is data buffered" check, so a tiny deadline stands in for
+				 * it. It must stay short: the fsync + flush feedback at the top of
+				 * the outer loop only run once this drain loop exits, so any wait here
+				 * directly adds to synchronous commit latency on the primary.
 				 */
-				ctxTimeout, cancel = context.WithTimeout(ctx, 1*time.Second)
+				ctxTimeout, cancel = context.WithTimeout(ctx, drainReceiveTimeout)
 				msg, err = stream.conn.ReceiveMessage(ctxTimeout)
 				cancel()
 				if pgconn.Timeout(err) {
