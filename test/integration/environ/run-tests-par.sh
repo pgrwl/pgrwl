@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Parallel integration test runner for local development.
 #
-# minio / sshd / toxiproxy start once and are shared by all parallel tests.
+# seaweedfs / sshd / toxiproxy start once and are shared by all parallel tests.
 # Tests run as 'docker compose run' containers in the same compose project,
-# so they reach infra services by their Docker service names (minio:9000, etc.).
+# so they reach infra services by their Docker service names (seaweedfs:9000, etc.).
 #
 # Usage:
 #   PG_MAJOR=17 bash run-tests-par.sh                   # all tests in parallel
@@ -64,9 +64,9 @@ if [[ -n "$BUILD" ]] || ! docker image inspect "pgrwl/pg-primary-${PG_MAJOR}" &>
   _dc build
 fi
 
-# Start shared infra once; minio healthcheck ensures it is ready before returning
-echo "==> starting infra (minio, sshd, toxiproxy)..."
-_dc up -d minio sshd toxiproxy
+# Start shared infra once; seaweedfs healthcheck ensures it is ready before returning
+echo "==> starting infra (seaweedfs, sshd, toxiproxy)..."
+_dc up -d --wait seaweedfs sshd toxiproxy
 
 LOG_DIR="${SCRIPT_DIR}/test_logs"
 rm -rf "$LOG_DIR" && mkdir -p "$LOG_DIR"

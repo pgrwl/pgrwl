@@ -36,8 +36,8 @@ x_remake_config() {
     },
     "s3": {
       "url": "https://toxiproxy:9005",
-      "access_key_id": "minioadmin",
-      "secret_access_key": "minioadmin123",
+      "access_key_id": "s3admin",
+      "secret_access_key": "s3admin123",
       "bucket": "${TEST_NAME}",
       "region": "main",
       "use_path_style": true,
@@ -51,7 +51,7 @@ EOF
 x_backup_restore_with_toxiproxy() {
   echo_delim "cleanup state"
   x_remake_dirs
-  x_toxiproxy_setup_minio
+  x_toxiproxy_setup_s3
   x_remake_config
 
   echo_delim "init and run a cluster"
@@ -67,8 +67,8 @@ x_backup_restore_with_toxiproxy() {
   chmod +x "${BACKGROUND_INSERTS_SCRIPT_PATH}"
   nohup "${BACKGROUND_INSERTS_SCRIPT_PATH}" >>"${BACKGROUND_INSERTS_SCRIPT_LOG_FILE}" 2>&1 &
 
-  echo_delim "generate load while minio is flapping through toxiproxy"
-  x_toxiproxy_flap_minio 1 2 5 3
+  echo_delim "generate load while s3 is flapping through toxiproxy"
+  x_toxiproxy_flap_s3 1 2 5 3
   pgbench -i -s 10 postgres
   x_generate_wal 50
   sleep 10
@@ -82,8 +82,9 @@ x_backup_restore_with_toxiproxy() {
   x_stop_receiver
   xpg_teardown
 
-  echo_delim "restore backup while minio is cut through toxiproxy"
-  x_toxiproxy_cut_minio_after_delay 1 5
+  echo_delim "restore backup while s3 is cut through toxiproxy"
+  x_toxiproxy_cut_s3_after_delay 1 5
+  local s3_cut_pid=$!
   /usr/local/bin/pgrwl restore --dest="${PGDATA}" -c "/tmp/config.json"
 
   chmod 0750 "${PGDATA}"
@@ -101,6 +102,10 @@ EOF
   x_start_serving "/tmp/config.json"
 
   >/var/log/postgresql/pg.log
+
+  # Postgres must be able to fetch its checkpoint WAL on startup (restore_command
+  # has no retries), so make sure s3 is back before starting the cluster.
+  wait "${s3_cut_pid}"
 
   echo_delim "start restored cluster"
   xpg_start

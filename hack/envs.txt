@@ -1,1 +1,1 @@
-PGHOST=localhost;PGPORT=5432;PGUSER=postgres;PGPASSWORD=postgres;PGRWL_MINIO_URL=https://10.40.240.189:9000
+PGHOST=localhost;PGPORT=5432;PGUSER=postgres;PGPASSWORD=postgres

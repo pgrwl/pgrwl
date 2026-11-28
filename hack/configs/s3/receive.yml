@@ -29,8 +29,8 @@ storage:
   #  pass: qwerty123
   s3:
     url: "https://localhost:9000"
-    access_key_id: minioadmin
-    secret_access_key: minioadmin123
+    access_key_id: s3admin
+    secret_access_key: s3admin123
     bucket: backups
     region: main
     use_path_style: true

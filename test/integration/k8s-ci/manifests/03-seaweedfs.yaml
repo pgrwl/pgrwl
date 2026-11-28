@@ -1,0 +1,171 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: &app seaweedfs
+  namespace: pgrwl-test
+  labels:
+    app: *app
+spec:
+  type: NodePort
+  ports:
+    - name: seaweedfs-admin-ui
+      port: 12535
+      targetPort: 12535
+      nodePort: 30267
+    - name: seaweedfs-s3
+      port: 9000
+      targetPort: 9000
+      nodePort: 30268
+  selector:
+    app: *app
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seaweedfs-data
+  namespace: pgrwl-test
+spec:
+  # NOTE: replace with pvc you're using in your infra.
+  storageClassName: standard
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: &app seaweedfs
+  namespace: pgrwl-test
+  labels:
+    app: *app
+data:
+  TZ: "Asia/Aqtau"
+  # 'weed mini' creates the S3 admin identity from these and pre-creates S3_BUCKET
+  AWS_ACCESS_KEY_ID: "s3admin"
+  AWS_SECRET_ACCESS_KEY: "s3admin123"
+  S3_BUCKET: "backups"
+  # keep the Go heap below the container memory limit
+  GOMEMLIMIT: "1536MiB"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: enable-seaweedfs-versioning
+  namespace: pgrwl-test
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      volumes:
+        - name: seaweedfs-certs
+          projected:
+            sources:
+              - secret:
+                  name: seaweedfs-certs
+      containers:
+        - name: versioning
+          image: amazon/aws-cli:2.42.5
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: "s3admin"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "s3admin123"
+            - name: AWS_DEFAULT_REGION
+              value: "main"
+            - name: AWS_ENDPOINT_URL
+              value: "https://seaweedfs:9000"
+            # TLS is verified against the test cert (SAN: seaweedfs)
+            - name: AWS_CA_BUNDLE
+              value: "/certs/public.crt"
+          volumeMounts:
+            - name: seaweedfs-certs
+              mountPath: /certs
+              readOnly: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              aws configure set default.s3.addressing_style path
+              # waits for seaweedfs to come up and pre-create the bucket (S3_BUCKET)
+              until aws s3api put-bucket-versioning --bucket backups --versioning-configuration Status=Enabled; do
+                echo "Waiting for SeaweedFS...";
+                sleep 2;
+              done
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: &app seaweedfs
+  namespace: pgrwl-test
+  labels:
+    app: *app
+spec:
+  replicas: 1
+  serviceName: *app
+  selector:
+    matchLabels:
+      app: *app
+  template:
+    metadata:
+      labels:
+        app: *app
+    spec:
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: seaweedfs-data
+        - name: seaweedfs-certs
+          projected:
+            sources:
+              - secret:
+                  name: seaweedfs-certs
+      containers:
+        - name: *app
+          image: chrislusf/seaweedfs:4.55
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          # all-in-one: master + volume + filer + S3 gateway + admin UI in one process
+          args:
+            - mini
+            - -dir=/data
+            - -s3.port=9000
+            - -s3.cert.file=/certs/public.crt
+            - -s3.key.file=/certs/private.key
+            - -admin.user=$(AWS_ACCESS_KEY_ID)
+            - -admin.password=$(AWS_SECRET_ACCESS_KEY)
+            - -webdav=false
+            - -s3.port.iceberg=0
+            - -s3.port.lance=0
+          ports:
+            - containerPort: 12535
+            - containerPort: 9000
+          envFrom:
+            - configMapRef:
+                name: *app
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9000
+              scheme: HTTPS
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 128m
+              memory: 256Mi
+          volumeMounts:
+            - mountPath: /data
+              name: storage
+            - name: seaweedfs-certs
+              mountPath: /certs
+              readOnly: true

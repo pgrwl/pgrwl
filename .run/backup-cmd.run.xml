@@ -8,7 +8,6 @@
       <env name="PGPASSWORD" value="postgres" />
       <env name="PGPORT" value="5432" />
       <env name="PGRWL_DAEMON_MODE" value="receive" />
-      <env name="PGRWL_MINIO_URL" value="https://localhost:9000" />
       <env name="PGUSER" value="postgres" />
     </envs>
     <kind value="FILE" />

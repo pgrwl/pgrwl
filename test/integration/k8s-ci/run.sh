@@ -36,10 +36,10 @@ docker network connect kind kind-registry
 
 kubectl create ns pgrwl-test --dry-run=client -oyaml | kubectl apply -f -
 
-# create minio certs
-kubectl -n pgrwl-test create secret generic minio-certs \
-  --from-file=public.crt=./files/minio/certs/public.crt \
-  --from-file=private.key=./files/minio/certs/private.key \
+# create seaweedfs certs
+kubectl -n pgrwl-test create secret generic seaweedfs-certs \
+  --from-file=public.crt=./files/seaweedfs/certs/public.crt \
+  --from-file=private.key=./files/seaweedfs/certs/private.key \
   --dry-run=client -oyaml | kubectl apply -f -
 
 # deploy workloads
