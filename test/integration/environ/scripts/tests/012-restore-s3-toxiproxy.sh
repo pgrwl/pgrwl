@@ -84,6 +84,7 @@ x_backup_restore_with_toxiproxy() {
 
   echo_delim "restore backup while s3 is cut through toxiproxy"
   x_toxiproxy_cut_s3_after_delay 1 5
+  local s3_cut_pid=$!
   /usr/local/bin/pgrwl restore --dest="${PGDATA}" -c "/tmp/config.json"
 
   chmod 0750 "${PGDATA}"
@@ -101,6 +102,10 @@ EOF
   x_start_serving "/tmp/config.json"
 
   >/var/log/postgresql/pg.log
+
+  # Postgres must be able to fetch its checkpoint WAL on startup (restore_command
+  # has no retries), so make sure s3 is back before starting the cluster.
+  wait "${s3_cut_pid}"
 
   echo_delim "start restored cluster"
   xpg_start

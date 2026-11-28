@@ -66,7 +66,7 @@ fi
 
 # Start shared infra once; seaweedfs healthcheck ensures it is ready before returning
 echo "==> starting infra (seaweedfs, sshd, toxiproxy)..."
-_dc up -d seaweedfs sshd toxiproxy
+_dc up -d --wait seaweedfs sshd toxiproxy
 
 LOG_DIR="${SCRIPT_DIR}/test_logs"
 rm -rf "$LOG_DIR" && mkdir -p "$LOG_DIR"
